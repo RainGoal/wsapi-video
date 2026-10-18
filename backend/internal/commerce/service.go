@@ -104,6 +104,13 @@ func dbError(w http.ResponseWriter, err error) {
 }
 func invalid(w http.ResponseWriter, message string)  { httpx.Fail(w, 422, "invalid_input", message) }
 func conflict(w http.ResponseWriter, message string) { httpx.Fail(w, 409, "conflict", message) }
+func generationUnavailable(w http.ResponseWriter, err error) {
+	if errors.Is(err, settings.ErrStorageUnavailable) {
+		httpx.Fail(w, 503, "storage_unavailable", "私有存储尚未配置，请管理员在系统设置中完成私有存储配置后重试")
+		return
+	}
+	httpx.Fail(w, 503, "gateway_unavailable", "生成服务尚未配置")
+}
 func digest(v any) string {
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)
@@ -136,6 +143,9 @@ func (s *Service) listProducts(ctx context.Context, all bool) ([]Product, error)
 	var current gatewayClient = s.gateway
 	if !all && s.settings != nil && !s.isDemo() {
 		g, err := s.settings.Gateway(ctx, "")
+		if errors.Is(err, settings.ErrStorageUnavailable) {
+			return nil, err
+		}
 		if errors.Is(err, media.ErrUnavailable) {
 			return []Product{}, nil
 		}
@@ -166,6 +176,10 @@ func (s *Service) listProducts(ctx context.Context, all bool) ([]Product, error)
 }
 func (s *Service) products(w http.ResponseWriter, r *http.Request) {
 	p, err := s.listProducts(r.Context(), false)
+	if errors.Is(err, settings.ErrStorageUnavailable) {
+		generationUnavailable(w, err)
+		return
+	}
 	if err != nil {
 		dbError(w, err)
 		return
@@ -323,7 +337,7 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) {
 	}
 	if !p.Demo {
 		if _, err = s.gateway.Credential(p.Kind); err != nil {
-			httpx.Fail(w, 503, "gateway_unavailable", "此生成服务尚未配置")
+			generationUnavailable(w, err)
 			return
 		}
 	}
@@ -454,10 +468,12 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 	// Resolve the active connector before acquiring a transaction. Runtime
 	// settings use the same pool, which may intentionally have only one slot.
 	var activeGateway gatewayClient = s.gateway
+	var activeGatewayErr error
 	if s.settings != nil {
 		g, e := s.settings.Gateway(ctx, "")
 		if e != nil {
 			activeGateway = nil
+			activeGatewayErr = e
 		} else {
 			activeGateway = g
 		}
@@ -536,12 +552,15 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 	ref := "demo"
 	if !p.Demo {
 		if activeGateway == nil {
-			err = media.ErrUnavailable
+			err = activeGatewayErr
+			if err == nil {
+				err = media.ErrUnavailable
+			}
 		} else {
 			ref, err = activeGateway.Credential(p.Kind)
 		}
 		if err != nil {
-			httpx.Fail(w, 503, "gateway_unavailable", "生成服务尚未配置")
+			generationUnavailable(w, err)
 			return
 		}
 	}

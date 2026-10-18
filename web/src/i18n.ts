@@ -39,6 +39,8 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  "私有存储尚未配置，请管理员在系统设置中完成私有存储配置后重试":
+    "Private storage is not configured. Ask an administrator to configure private storage in System settings, then try again.",
   "{0} 积分/秒 × {1} 秒": "{0} credits/second × {1} seconds",
   "{0} 积分/次 × {1} 次": "{0} credits/generation × {1} generation",
   "当前规格无法计算有效积分，请检查时长或更换模型。单次报价最高 1,000,000,000 积分。":

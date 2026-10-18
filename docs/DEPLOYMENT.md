@@ -91,7 +91,7 @@ docker compose --env-file deploy/.env.production up -d --no-deps --force-recreat
 
 升级前备份数据库、私有对象、部署配置和对应 `APP_SECRET`，记录上一镜像 ID/digest。保持 `COMPOSE_PROJECT_NAME` 与数据库卷名称，使用新版本镜像重建应用；已有事务迁移不可编辑，失败先保留卷与日志，回退前确认旧应用兼容已应用 schema。不要通过删卷或重建空库修复升级问题。
 
-在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为完整镜像引用：`ghcr.io/raingoal/wsapi-video:v0.1.3`、`ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`，或 `ghcr.io/raingoal/wsapi-video@sha256:<digest>`。要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
+在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为完整镜像引用：`ghcr.io/raingoal/wsapi-video:v0.1.4`、`ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`，或 `ghcr.io/raingoal/wsapi-video@sha256:<digest>`。要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
 
 ```sh
 docker compose --env-file deploy/.env.production pull app
@@ -108,6 +108,8 @@ docker compose --env-file deploy/.env.production ps
 `v0.1.2` 还补齐模型商品和充值档位删除，并修复已配置生成凭证却因存储未就绪而无法上架商品的问题。首次启动自动增加目录软删除字段；删除目录项不会移除已有业务记录。
 
 `v0.1.3` 增加视频按次、按请求秒数及分辨率覆盖定价。启动时自动增加可空定价配置列；旧商品继续固定按次，已有报价、任务和账本保留原总额。升级后可直接在后台配置，无需修改环境文件中的外部服务凭证。规则与示例见[视频零售定价](OPERATIONS.md#视频零售定价)。
+
+`v0.1.4` 修复存储未配置时的误导提示：创作页明确提示完成私有存储配置，不再显示为没有可用商品。生产生成仍需私有存储保存成品；存储配置继续在后台填写，已上架商品无需重建。本版本无新增数据库迁移。
 
 `POSTGRES_PASSWORD` 是 PostgreSQL 镜像首次创建数据目录时的初始密码，修改环境文件不会修改已有卷里的数据库账户密码。轮换须按数据库运维流程协调数据库账户与应用连接；本模板没有自动轮换或重置数据操作。`APP_SECRET` 更换须离线重加密，丢失原密钥无法仅凭数据库密文恢复。外部媒体/支付密钥在后台轮换并保留历史凭证版本，不能删旧业务引用。
 

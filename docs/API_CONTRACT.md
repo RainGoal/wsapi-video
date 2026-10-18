@@ -59,6 +59,7 @@ Project：`id/user_id/name/description/status/cover_asset_id/revision/shots_revi
 ## 商品、报价、任务、钱包和支付
 
 - `GET /model-products`：`{items:ModelProduct[],demo:boolean}`；商品明确 `kind/model/capabilities/credits/pricing/version/active/verified/demo`，实际字段以 commerce 导出类型为准。
+- 生产环境未配置私有存储时，`GET /model-products`、`POST /quotes` 及尚未受理的新 `POST /tasks` 返回 `503 storage_unavailable`，明确提示管理员完成私有存储配置，不再返回空商品列表。拒绝不会冻结积分；已受理任务的同键重试继续返回原任务。
 - 视频可选 `pricing:{billing_unit:"per_video"|"per_second",resolution_credits:{"720p":5,"1080p":8}}`；`credits` 为默认单位整数积分，分辨率覆盖价优先（忽略大小写与两端空格），未覆盖使用默认价。缺失/null 的 `pricing` 保持旧固定单次积分；图片不接受此配置。按秒使用规范化后的请求时长，单位积分与总额均须在 1–1,000,000,000 范围内。
 - `POST /quotes`：项目、商品、提示词、参数与参考 asset ID；返回报价 ID、固定总积分和 expires_at。视频定价明细 `pricing` 包含 `billing_unit/unit_credits/quantity/resolution/total_credits`，按次数量为 1，按秒数量为请求时长。服务端保存输入、完整商品/价格快照与总额；后台后续调价不重算该报价。
 - `POST /tasks`：`{quote_id,request_key}`；同键同内容返回原任务，同键不同内容 409；事务内创建任务并冻结积分。

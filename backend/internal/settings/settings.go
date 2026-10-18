@@ -24,6 +24,7 @@ import (
 )
 
 var ErrConflict = errors.New("settings revision conflict")
+var ErrStorageUnavailable = fmt.Errorf("private storage is not configured: %w", media.ErrUnavailable)
 
 type FieldErrors map[string]string
 
@@ -190,7 +191,7 @@ func (s *Service) Gateway(ctx context.Context, ref string) (*media.Connector, er
 		return nil, err
 	}
 	if ref == "" && !s.base.DevMode && !s.Ready(st).Storage {
-		return nil, media.ErrUnavailable
+		return nil, ErrStorageUnavailable
 	}
 	c := s.Config(st)
 	return media.NewConnector(media.Config{Origin: c.Sub2APIOrigin, Keys: c.MediaKeys, ImageCredential: c.ImageCredential, VideoCredential: c.VideoCredential, OutputOrigins: c.MediaOutputOrigins, MaxMediaBytes: c.MaxMediaBytes})
