@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -199,6 +200,10 @@ func TestPostgresSignalsSnapshotSamplesPermissionsAndNoMutation(t *testing.T) {
 	identity := auth.New(db, config.Config{})
 	service := New(db, config.Config{TaskReviewAfter: 24 * time.Hour})
 	service.Register(mux, identity.Admin)
+	wantSignals, err := json.Marshal(result.Signals)
+	if err != nil {
+		t.Fatal("encoding shared-query signals", err)
+	}
 	for _, access := range []struct {
 		token  string
 		status int
@@ -222,8 +227,20 @@ func TestPostgresSignalsSnapshotSamplesPermissionsAndNoMutation(t *testing.T) {
 				Code string         `json:"code"`
 				Data SnapshotResult `json:"data"`
 			}
-			if err = json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil || envelope.Code != "ok" || !reflect.DeepEqual(envelope.Data.Signals, result.Signals) {
-				t.Fatal("HTTP snapshot differs from shared query", err)
+			if err = json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+				t.Fatal("decoding HTTP signal snapshot", err)
+			}
+			if envelope.Code != "ok" {
+				t.Fatalf("HTTP signal snapshot code = %q, want ok", envelope.Code)
+			}
+			// Compare exact wire values: PostgreSQL's +00:00 and HTTP's Z can
+			// decode to different time.Time locations for the same instant.
+			gotSignals, err := json.Marshal(envelope.Data.Signals)
+			if err != nil {
+				t.Fatal("encoding HTTP signals", err)
+			}
+			if !bytes.Equal(gotSignals, wantSignals) {
+				t.Fatalf("HTTP signals differ from shared query:\n got: %s\nwant: %s", gotSignals, wantSignals)
 			}
 		}
 	}
