@@ -3,7 +3,8 @@ import "./creation.css";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, errorMessage, items } from "./api";
 import { useStudio } from "./App";
-import type { Asset, Product, Quote, Task } from "./types";
+import type { Asset, PricingBreakdown, Product, Quote, Task } from "./types";
+import { estimateProductPrice } from "./pricing";
 import {
   canvasGenerationDefaults,
   canvasReferenceSelection,
@@ -22,6 +23,20 @@ import {
   withSubmissionRecoveryLock,
   type PendingSubmission,
 } from "./submission-recovery";
+function priceFormula(price: PricingBreakdown) {
+  return price.billing_unit === "per_second"
+    ? t(
+        "{0} 积分/秒 × {1} 秒",
+        price.unit_credits.toLocaleString(),
+        price.quantity,
+      )
+    : t(
+        "{0} 积分/次 × {1} 次",
+        price.unit_credits.toLocaleString(),
+        price.quantity,
+      );
+}
+
 export function Generate({
   projectId,
   assets,
@@ -117,6 +132,15 @@ export function Generate({
     busy || !recoveryReady || !!recovery || !!storageError || !!settled;
   const available = items(products.data).filter((p) => p.kind === kind);
   const product = available.find((p) => p.id === productId) || available[0];
+  const priceEstimate = product
+    ? estimateProductPrice(product, duration, resolution)
+    : null;
+  const priceProblem =
+    product && !priceEstimate
+      ? t(
+          "当前规格无法计算有效积分，请检查时长或更换模型。单次报价最高 1,000,000,000 积分。",
+        )
+      : "";
   const latestQuoteInput = useRef("");
   latestQuoteInput.current = JSON.stringify([
     product?.id,
@@ -182,7 +206,7 @@ export function Generate({
     endFrame,
   ]);
   async function getQuote() {
-    if (!product || busyRef.current || locked) return;
+    if (!product || !priceEstimate || busyRef.current || locked) return;
     busyRef.current = true;
     const submittedInput = latestQuoteInput.current;
     setBusy(true);
@@ -702,18 +726,33 @@ export function Generate({
                 </strong>
               </div>
               <div>
-                <span>{t("商品参考价")}</span>
+                <span>{t("本次预估积分")}</span>
                 <strong>
-                  {product ? product.credits.toLocaleString() : "—"}{" "}
+                  {priceEstimate
+                    ? priceEstimate.total_credits.toLocaleString()
+                    : "—"}{" "}
                   <small>{t("积分")}</small>
                 </strong>
               </div>
+              {priceEstimate && (
+                <p>
+                  {priceFormula(priceEstimate)}
+                  {priceEstimate.resolution && ` · ${priceEstimate.resolution}`}
+                  {priceEstimate.billing_unit === "per_second" && (
+                    <>
+                      <br />
+                      {t("按所选请求时长计费")}
+                    </>
+                  )}
+                </p>
+              )}
               <p>
                 {t(
                   "服务端报价后确认总价。提交时冻结积分，作品保存完成后结算。",
                 )}
               </p>
             </div>
+            {priceProblem && <Notice error>{priceProblem}</Notice>}
             {(system?.demo || product?.demo) && (
               <Notice>
                 {t(
@@ -769,11 +808,17 @@ export function Generate({
         <span>
           {quote ? (
             <>
-              {t("本次固定报价")}
+              {t("本次确认报价")}
               <strong>
-                {quote.credits}
+                {quote.credits.toLocaleString()}
                 {t("积分")}
               </strong>
+              {quote.pricing && (
+                <small>
+                  {priceFormula(quote.pricing)}
+                  {quote.pricing.resolution && ` · ${quote.pricing.resolution}`}
+                </small>
+              )}
               <small>
                 {t("有效至")}
                 {new Date(quote.expires_at).toLocaleTimeString("zh-CN")}
@@ -793,6 +838,7 @@ export function Generate({
             !product ||
             !prompt.trim() ||
             !!recovery ||
+            !!priceProblem ||
             referenceProblems.length > 0
           }
           onClick={() => void (quote ? submit() : getQuote())}

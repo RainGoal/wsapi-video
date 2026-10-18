@@ -1,4 +1,10 @@
-import type { Capabilities, Product } from "../types";
+import type {
+  Capabilities,
+  Product,
+  ProductPricing,
+  VideoBillingUnit,
+} from "../types";
+import { MAX_CREDITS, validCredits } from "../pricing";
 
 export type CapabilityLists = Record<
   "aspect_ratios" | "durations" | "resolutions" | "sizes" | "qualities",
@@ -35,6 +41,65 @@ export function productCapabilities(
         }
       : {}),
   };
+}
+
+export function pricingResolutions(resolutions: string[]): string[] {
+  return [
+    ...new Set(
+      resolutions.map((value) => value.trim().toLowerCase()).filter(Boolean),
+    ),
+  ];
+}
+
+export function productPricing(
+  kind: Product["kind"],
+  billingUnit: VideoBillingUnit,
+  resolutions: string[],
+  overrides: Record<string, string>,
+): ProductPricing | undefined | null {
+  if (kind !== "video") return undefined;
+  const resolutionCredits: [string, number][] = [];
+  for (const resolution of pricingResolutions(resolutions)) {
+    const value = Object.hasOwn(overrides, resolution)
+      ? overrides[resolution].trim()
+      : "";
+    if (!value) continue;
+    const credits = Number(value);
+    if (!validCredits(credits)) return null;
+    resolutionCredits.push([resolution, credits]);
+  }
+  return {
+    billing_unit: billingUnit,
+    resolution_credits: Object.fromEntries(resolutionCredits),
+  };
+}
+
+export function productPriceLimitsValid(
+  credits: number,
+  pricing: ProductPricing | undefined,
+  durations: number[],
+): boolean {
+  if (!validCredits(credits)) return false;
+  if (!pricing) return true;
+  if (
+    pricing.billing_unit !== "per_video" &&
+    pricing.billing_unit !== "per_second"
+  )
+    return false;
+  if (
+    pricing.billing_unit === "per_second" &&
+    (!durations.length ||
+      durations.some(
+        (value) => !Number.isSafeInteger(value) || value < 1 || value > 600,
+      ))
+  )
+    return false;
+  const quantity =
+    pricing.billing_unit === "per_second" ? Math.max(...durations) : 1;
+  return [credits, ...Object.values(pricing.resolution_credits || {})].every(
+    (value) =>
+      validCredits(value) && value <= Math.floor(MAX_CREDITS / quantity),
+  );
 }
 
 function definition(product: Product) {

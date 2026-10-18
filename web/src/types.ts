@@ -90,12 +90,25 @@ export type Capabilities = {
   max_reference_width?: number;
   max_reference_height?: number;
 };
+export type VideoBillingUnit = "per_video" | "per_second";
+export type ProductPricing = {
+  billing_unit: VideoBillingUnit;
+  resolution_credits?: Record<string, number> | null;
+};
+export type PricingBreakdown = {
+  billing_unit: VideoBillingUnit;
+  unit_credits: number;
+  quantity: number;
+  resolution: string;
+  total_credits: number;
+};
 export type Product = {
   id: string;
   name: string;
   kind: "image" | "video";
   model: string;
   credits: number;
+  pricing?: ProductPricing;
   version: number;
   capabilities: Capabilities;
   demo: boolean;
@@ -108,6 +121,7 @@ export type Quote = {
   product_id: string;
   input_hash: string;
   demo: boolean;
+  pricing?: PricingBreakdown;
 };
 export type Task = {
   id: string;

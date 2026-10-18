@@ -52,7 +52,7 @@ func validateProduct(p Product) bool {
 	if p.Kind == "video" && (len(c.Sizes) > 0 || len(c.Qualities) > 0) {
 		return false
 	}
-	return true
+	return validateProductPricing(p) == nil
 }
 
 func sameProductCapabilities(a, b Capabilities) bool {
@@ -162,9 +162,13 @@ func (s *Service) saveProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Version = old.Version + 1
 	c, _ := json.Marshal(p.Capabilities)
+	var pricing []byte
+	if p.Pricing != nil {
+		pricing, _ = json.Marshal(p.Pricing)
+	}
 	// A missing row cannot be locked by SELECT FOR UPDATE. Check the observed
 	// version again in the write so a concurrent creation cannot be overwritten.
-	tag, err := tx.Exec(ctx, "INSERT INTO model_products(id,name,kind,model,credits,version,capabilities,active,verified,is_demo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,model=excluded.model,credits=excluded.credits,version=excluded.version,capabilities=excluded.capabilities,active=excluded.active,verified=excluded.verified,updated_at=now() WHERE model_products.version=$11 AND model_products.deleted_at IS NULL", p.ID, p.Name, p.Kind, p.Model, p.Credits, p.Version, c, p.Active, p.Verified, p.Demo, old.Version)
+	tag, err := tx.Exec(ctx, "INSERT INTO model_products(id,name,kind,model,credits,version,capabilities,active,verified,is_demo,pricing) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,model=excluded.model,credits=excluded.credits,version=excluded.version,capabilities=excluded.capabilities,active=excluded.active,verified=excluded.verified,pricing=excluded.pricing,updated_at=now() WHERE model_products.version=$12 AND model_products.deleted_at IS NULL", p.ID, p.Name, p.Kind, p.Model, p.Credits, p.Version, c, p.Active, p.Verified, p.Demo, pricing, old.Version)
 	if err == nil && tag.RowsAffected() == 0 {
 		conflict(w, "商品已更新或删除，请重新加载；已删除 ID 不可复用")
 		return

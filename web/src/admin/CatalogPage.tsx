@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api";
 import { useStudio } from "../App";
-import type { Capabilities, PaymentTier, Product } from "../types";
+import type {
+  Capabilities,
+  PaymentTier,
+  Product,
+  VideoBillingUnit,
+} from "../types";
+import { productBillingUnit, validCredits } from "../pricing";
 import {
   productCapabilities,
   productDefinitionChanged,
+  productPricing,
+  productPriceLimitsValid,
+  pricingResolutions,
 } from "./catalog-product";
 import { createSettingsOperationScope } from "./settings-operation";
 import { Empty, Icon, LoadingError, Modal, Notice, useResource } from "../ui";
@@ -133,8 +142,8 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
           <p>
             {kind === "products"
               ? a(
-                  "单次生成按固定商品积分报价，已接受任务保留原价格和能力快照。",
-                  "Each generation is quoted using the product's fixed credit price. Accepted tasks retain their original price and capabilities.",
+                  "图片按次计费；视频支持按次或按请求时长计费，并可设置分辨率价格。已接受任务保留原报价。",
+                  "Images are billed per generation. Video supports per-video or requested-second pricing with resolution overrides. Accepted tasks retain their quoted price.",
                 )
               : a(
                   "金额以人民币元填写、服务端以整数分保存；支付确认后唯一入账。",
@@ -263,6 +272,19 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
                         <strong className="mono">
                           {row.credits.toLocaleString()}
                         </strong>
+                        {"model" in row && (
+                          <small className="cell-sub muted">
+                            {productBillingUnit(row as AdminProduct) ===
+                            "per_second"
+                              ? a("积分 / 秒", "credits / second")
+                              : a("积分 / 次", "credits / generation")}
+                            {Object.keys(
+                              (row as AdminProduct).pricing
+                                ?.resolution_credits || {},
+                            ).length > 0 &&
+                              a(" · 含分辨率覆盖价", " · resolution prices")}
+                          </small>
+                        )}
                       </td>
                       <td>
                         <span
@@ -488,6 +510,15 @@ function ProductForm({
     sizes: (initial.capabilities.sizes ?? []).join(", "),
     qualities: (initial.capabilities.qualities ?? []).join(", "),
   });
+  const [billingUnit, setBillingUnit] = useState(productBillingUnit(initial));
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        Object.entries(initial.pricing?.resolution_credits || {}).map(
+          ([key, value]) => [key.trim().toLowerCase(), String(value)],
+        ),
+      ),
+  );
   const capabilities = productCapabilities(
     draft.kind,
     draft.capabilities,
@@ -520,6 +551,19 @@ function ProductForm({
     setError("");
     setBusy(true);
     try {
+      const pricing = productPricing(
+        draft.kind,
+        billingUnit,
+        capabilities.resolutions,
+        priceOverrides,
+      );
+      if (!validCredits(draft.credits) || pricing === null)
+        throw new Error(
+          a(
+            "默认积分和分辨率覆盖价必须为 1–1,000,000,000 的整数；覆盖价可留空使用默认价。",
+            "Default and resolution credit prices must be integers from 1 to 1,000,000,000. Leave an override blank to use the default.",
+          ),
+        );
       if (
         capabilities.durations.some(
           (v) => !Number.isSafeInteger(v) || v < 1 || v > 600,
@@ -529,6 +573,15 @@ function ProductForm({
           a(
             "视频时长必须为 1–600 的整数秒。",
             "Video durations must be integer seconds between 1 and 600.",
+          ),
+        );
+      if (
+        !productPriceLimitsValid(draft.credits, pricing, capabilities.durations)
+      )
+        throw new Error(
+          a(
+            "按秒计费须填写可选视频时长；默认价和每个分辨率价格在所有可选时长下的总额均不得超过 1,000,000,000 积分。",
+            "Per-second billing requires selectable video durations. Default and resolution prices must not exceed 1,000,000,000 credits at any selectable duration.",
           ),
         );
       if (!definitionChanged && draft.active && !draft.verified)
@@ -547,6 +600,7 @@ function ProductForm({
           name: draft.name.trim(),
           model: draft.model.trim(),
           capabilities,
+          pricing,
           active,
           verified,
           reason,
@@ -611,25 +665,27 @@ function ProductForm({
               maxLength={200}
             />
           </Field>
-          <Field
-            label={a("单次生成积分", "Credits per generation")}
-            hint={a(
-              "正整数；同一商品的所有可选规格使用此固定价格。",
-              "Positive integer. All selectable specifications for this product use this fixed price.",
-            )}
-          >
-            <input
-              type="number"
-              step={1}
-              min={1}
-              max={1000000000}
-              value={draft.credits}
-              onChange={(e) =>
-                setDraft({ ...draft, credits: Number(e.target.value) })
-              }
-              required
-            />
-          </Field>
+          {draft.kind === "image" && (
+            <Field
+              label={a("单次生成积分", "Credits per generation")}
+              hint={a(
+                "正整数；同一商品的所有可选规格使用此固定价格。",
+                "Positive integer. All selectable specifications for this product use this fixed price.",
+              )}
+            >
+              <input
+                type="number"
+                step={1}
+                min={1}
+                max={1000000000}
+                value={draft.credits}
+                onChange={(e) =>
+                  setDraft({ ...draft, credits: Number(e.target.value) })
+                }
+                required
+              />
+            </Field>
+          )}
           <Field label={a("当前版本", "Current version")}>
             <input
               value={initial.version ? `v${initial.version}` : a("新建", "New")}
@@ -688,6 +744,138 @@ function ProductForm({
               ),
             )}
         </div>
+        {draft.kind === "video" && (
+          <>
+            <h3 className="admin-form-section">
+              {a("视频积分定价", "Video credit pricing")}
+            </h3>
+            <p className="muted">
+              {a(
+                "同一模型统一计费单位。按秒使用用户选择的请求时长，切换单位不会自动换算价格。这里配置零售积分，与上游美元成本独立。",
+                "One billing unit applies to the whole model. Per-second billing uses the requested duration; switching units does not convert prices. These retail credits are independent of upstream USD costs.",
+              )}
+            </p>
+            <div className="admin-form-grid">
+              <Field label={a("视频计费方式", "Video billing unit")}>
+                <select
+                  value={billingUnit}
+                  onChange={(e) =>
+                    setBillingUnit(e.target.value as VideoBillingUnit)
+                  }
+                >
+                  <option value="per_video">
+                    {a("按次（每条视频）", "Per video")}
+                  </option>
+                  <option value="per_second">
+                    {a("按秒（请求时长）", "Per requested second")}
+                  </option>
+                </select>
+              </Field>
+              <Field
+                label={
+                  billingUnit === "per_second"
+                    ? a("默认每秒积分", "Default credits per second")
+                    : a("默认每次积分", "Default credits per video")
+                }
+                hint={a(
+                  "未设置分辨率覆盖价时使用；整数积分。",
+                  "Used when no resolution price is set; integer credits.",
+                )}
+              >
+                <input
+                  required
+                  type="number"
+                  min={1}
+                  max={1000000000}
+                  step={1}
+                  value={draft.credits}
+                  onChange={(e) =>
+                    setDraft({ ...draft, credits: Number(e.target.value) })
+                  }
+                />
+              </Field>
+            </div>
+            {pricingResolutions(capabilities.resolutions).length ? (
+              <div className="table-wrap admin-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{a("分辨率", "Resolution")}</th>
+                      <th>
+                        {billingUnit === "per_second"
+                          ? a("覆盖积分 / 秒", "Override credits / second")
+                          : a("覆盖积分 / 次", "Override credits / video")}
+                      </th>
+                      <th>{a("操作", "Actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pricingResolutions(capabilities.resolutions).map(
+                      (resolution) => {
+                        const value = Object.hasOwn(priceOverrides, resolution)
+                          ? priceOverrides[resolution]
+                          : "";
+                        return (
+                          <tr key={resolution}>
+                            <th scope="row" className="mono">
+                              {resolution}
+                            </th>
+                            <td>
+                              <input
+                                aria-label={a(
+                                  `${resolution} 覆盖积分`,
+                                  `${resolution} override credits`,
+                                )}
+                                type="number"
+                                min={1}
+                                max={1000000000}
+                                step={1}
+                                placeholder={String(draft.credits)}
+                                value={value}
+                                onChange={(e) =>
+                                  setPriceOverrides((old) => ({
+                                    ...old,
+                                    [resolution]: e.target.value,
+                                  }))
+                                }
+                              />
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="button subtle small"
+                                disabled={!value}
+                                aria-label={a(
+                                  `${resolution} 使用默认价`,
+                                  `Use default price for ${resolution}`,
+                                )}
+                                onClick={() =>
+                                  setPriceOverrides((old) => ({
+                                    ...old,
+                                    [resolution]: "",
+                                  }))
+                                }
+                              >
+                                {a("使用默认价", "Use default")}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      },
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="muted">
+                {a(
+                  "填写视频分辨率后，可设置各档覆盖价；留空均使用默认价。",
+                  "Add video resolutions to set individual prices. Blank overrides use the default.",
+                )}
+              </p>
+            )}
+          </>
+        )}
         <h3 className="admin-form-section">
           {a("参考素材限制", "Reference media limits")}
         </h3>

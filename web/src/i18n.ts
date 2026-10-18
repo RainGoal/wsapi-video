@@ -39,6 +39,13 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  "{0} 积分/秒 × {1} 秒": "{0} credits/second × {1} seconds",
+  "{0} 积分/次 × {1} 次": "{0} credits/generation × {1} generation",
+  "当前规格无法计算有效积分，请检查时长或更换模型。单次报价最高 1,000,000,000 积分。":
+    "A valid credit price could not be calculated. Check the duration or choose another model. Quotes cannot exceed 1,000,000,000 credits.",
+  本次预估积分: "Estimated credits",
+  按所选请求时长计费: "Billed using the selected requested duration",
+  本次确认报价: "Confirmed quote",
   "画布连线保留创作关系。本次生成以当前提示词、参考素材和首尾帧选择为准，受理后会保留实际输入快照。":
     "Canvas connections keep creative relationships. This generation uses the current prompt, references and frame selections, saved when accepted.",
   "已恢复此节点上次受理的参考和首尾帧选择；修改画布连线后会按新的引用重新带入。":

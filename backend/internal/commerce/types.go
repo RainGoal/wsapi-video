@@ -23,16 +23,28 @@ type Capabilities struct {
 	MaxReferenceHeight          int      `json:"max_reference_height,omitempty"`
 }
 type Product struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Kind         string       `json:"kind"`
-	Model        string       `json:"model"`
-	Credits      int64        `json:"credits"`
-	Version      int          `json:"version"`
-	Capabilities Capabilities `json:"capabilities"`
-	Active       bool         `json:"active"`
-	Verified     bool         `json:"verified"`
-	Demo         bool         `json:"demo"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Kind         string          `json:"kind"`
+	Model        string          `json:"model"`
+	Credits      int64           `json:"credits"`
+	Pricing      *ProductPricing `json:"pricing,omitempty"`
+	Version      int             `json:"version"`
+	Capabilities Capabilities    `json:"capabilities"`
+	Active       bool            `json:"active"`
+	Verified     bool            `json:"verified"`
+	Demo         bool            `json:"demo"`
+}
+type ProductPricing struct {
+	BillingUnit       string           `json:"billing_unit"`
+	ResolutionCredits map[string]int64 `json:"resolution_credits,omitempty"`
+}
+type PriceBreakdown struct {
+	BillingUnit  string `json:"billing_unit"`
+	UnitCredits  int64  `json:"unit_credits"`
+	Quantity     int64  `json:"quantity"`
+	Resolution   string `json:"resolution"`
+	TotalCredits int64  `json:"total_credits"`
 }
 type QuoteInput struct {
 	ProjectID         string   `json:"project_id"`
@@ -50,12 +62,13 @@ type QuoteInput struct {
 	EndFrameAssetID   string   `json:"end_frame_asset_id,omitempty"`
 }
 type Quote struct {
-	ID        string    `json:"id"`
-	ProductID string    `json:"product_id"`
-	Credits   int64     `json:"credits"`
-	InputHash string    `json:"input_hash"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Demo      bool      `json:"demo"`
+	ID        string          `json:"id"`
+	ProductID string          `json:"product_id"`
+	Credits   int64           `json:"credits"`
+	Pricing   *PriceBreakdown `json:"pricing,omitempty"`
+	InputHash string          `json:"input_hash"`
+	ExpiresAt time.Time       `json:"expires_at"`
+	Demo      bool            `json:"demo"`
 }
 type Task struct {
 	ID                string         `json:"id"`

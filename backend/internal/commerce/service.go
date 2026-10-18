@@ -116,16 +116,19 @@ func (s *Service) ownProject(ctx context.Context, userID, projectID string) erro
 	return s.db.QueryRow(ctx, "SELECT id FROM projects WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL AND status='active'", projectID, userID).Scan(&id)
 }
 
-const productColumns = "id,name,kind,model,credits,version,capabilities,active,verified,is_demo"
+const productColumns = "id,name,kind,model,credits,version,capabilities,active,verified,is_demo,pricing"
 
 type scanner interface{ Scan(...any) error }
 
 func scanProduct(row scanner) (Product, error) {
 	var p Product
-	var raw []byte
-	err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.Model, &p.Credits, &p.Version, &raw, &p.Active, &p.Verified, &p.Demo)
+	var raw, pricing []byte
+	err := row.Scan(&p.ID, &p.Name, &p.Kind, &p.Model, &p.Credits, &p.Version, &raw, &p.Active, &p.Verified, &p.Demo, &pricing)
 	if err == nil {
 		err = json.Unmarshal(raw, &p.Capabilities)
+	}
+	if err == nil && len(pricing) > 0 {
+		err = json.Unmarshal(pricing, &p.Pricing)
 	}
 	return p, err
 }
@@ -211,6 +214,14 @@ func validateInput(in *QuoteInput, p Product) error {
 	}
 	if in.Resolution == "" && len(c.Resolutions) > 0 {
 		in.Resolution = c.Resolutions[0]
+	}
+	if p.Kind == "video" && in.Resolution != "" {
+		for _, resolution := range c.Resolutions {
+			if resolutionKey(in.Resolution) == resolutionKey(resolution) {
+				in.Resolution = resolution
+				break
+			}
+		}
 	}
 	if in.Size == "" && len(c.Sizes) > 0 {
 		in.Size = c.Sizes[0]
@@ -336,10 +347,15 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	q := Quote{ID: core.ID("quote"), ProductID: p.ID, Credits: p.Credits, InputHash: digest(in), ExpiresAt: time.Now().UTC().Add(5 * time.Minute), Demo: p.Demo}
+	credits, pricing, err := calculateProductPrice(p, in)
+	if err != nil {
+		invalid(w, err.Error())
+		return
+	}
+	q := Quote{ID: core.ID("quote"), ProductID: p.ID, Credits: credits, Pricing: pricing, InputHash: digest(in), ExpiresAt: time.Now().UTC().Add(5 * time.Minute), Demo: p.Demo}
 	ib, _ := json.Marshal(in)
 	pb, _ := json.Marshal(p)
-	_, err = s.db.Exec(r.Context(), "INSERT INTO quotes(id,user_id,project_id,product_id,input,input_hash,product_snapshot,credits,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", q.ID, u.ID, in.ProjectID, p.ID, ib, q.InputHash, pb, p.Credits, q.ExpiresAt)
+	_, err = s.db.Exec(r.Context(), "INSERT INTO quotes(id,user_id,project_id,product_id,input,input_hash,product_snapshot,credits,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", q.ID, u.ID, in.ProjectID, p.ID, ib, q.InputHash, pb, q.Credits, q.ExpiresAt)
 	if err != nil {
 		dbError(w, err)
 		return
@@ -506,6 +522,11 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	if err = validateVideoSpecifications(in, p); err != nil {
 		invalid(w, err.Error())
+		return
+	}
+	quotedCredits, _, err := calculateProductPrice(p, in)
+	if err != nil || quotedCredits != credits {
+		invalid(w, "报价价格与冻结的商品规格不一致，请重新报价")
 		return
 	}
 	if p.Demo != s.isDemo() {

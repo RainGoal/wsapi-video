@@ -58,8 +58,9 @@ Project：`id/user_id/name/description/status/cover_asset_id/revision/shots_revi
 
 ## 商品、报价、任务、钱包和支付
 
-- `GET /model-products`：`{items:ModelProduct[],demo:boolean}`；商品明确 `kind/model/capabilities/credits/version/active/verified/demo`，实际字段以 commerce 导出类型为准。
-- `POST /quotes`：项目、商品、提示词、参数与参考 asset ID；返回报价 ID、固定积分、输入/能力/价格快照及 expires_at。
+- `GET /model-products`：`{items:ModelProduct[],demo:boolean}`；商品明确 `kind/model/capabilities/credits/pricing/version/active/verified/demo`，实际字段以 commerce 导出类型为准。
+- 视频可选 `pricing:{billing_unit:"per_video"|"per_second",resolution_credits:{"720p":5,"1080p":8}}`；`credits` 为默认单位整数积分，分辨率覆盖价优先（忽略大小写与两端空格），未覆盖使用默认价。缺失/null 的 `pricing` 保持旧固定单次积分；图片不接受此配置。按秒使用规范化后的请求时长，单位积分与总额均须在 1–1,000,000,000 范围内。
+- `POST /quotes`：项目、商品、提示词、参数与参考 asset ID；返回报价 ID、固定总积分和 expires_at。视频定价明细 `pricing` 包含 `billing_unit/unit_credits/quantity/resolution/total_credits`，按次数量为 1，按秒数量为请求时长。服务端保存输入、完整商品/价格快照与总额；后台后续调价不重算该报价。
 - `POST /tasks`：`{quote_id,request_key}`；同键同内容返回原任务，同键不同内容 409；事务内创建任务并冻结积分。
 - `409 quote_expired`：持有报价锁且确认该报价没有已受理任务后，才返回此明确拒绝；前端可清理原恢复记录并重新报价。通用 `409 conflict` 可能表示并发已受理，不能按状态码清除恢复信息。
 - `409 product_unavailable`：同样在持有报价锁且确认没有已受理任务后返回，表示商品已删除；可清理原恢复记录并选择其他商品重新报价。已受理任务的同键重试继续返回原任务。
