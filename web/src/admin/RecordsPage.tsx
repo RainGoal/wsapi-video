@@ -154,7 +154,9 @@ export function RecordsPage({
     ],
     audit: [
       ["product.save", "商品配置", "Product changes"],
+      ["product.delete", "删除商品", "Product deletion"],
       ["payment_tier.save", "充值档位", "Package changes"],
+      ["payment_tier.delete", "删除充值档位", "Package deletion"],
       ["settings.update", "系统配置", "System settings"],
       ["wallet.adjust", "积分调整", "Credit adjustments"],
       ["task.refund", "任务退款", "Task refunds"],

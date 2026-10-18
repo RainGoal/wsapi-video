@@ -35,7 +35,7 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 	}
 	t.Cleanup(limited.Close)
 	db = limited
-	var originalMediaCalls, newProviderCalls, paymentQueries atomic.Int64
+	var originalMediaCalls, newProviderCalls, paymentQueries, paymentProbes atomic.Int64
 	png := fixturePNG(t)
 	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -55,7 +55,15 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 			}
 			originalMediaCalls.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "fixture-image-task", "status": "completed", "result": map[string]any{"data": []any{map[string]string{"b64_json": base64.StdEncoding.EncodeToString(png)}}}})
-		case "/api.php":
+		case "/epay/submit.php":
+			if r.Method != http.MethodHead || r.URL.RawQuery != "" {
+				t.Error("payment probe must only check the fixed endpoint without credentials")
+				w.WriteHeader(405)
+				return
+			}
+			paymentProbes.Add(1)
+			w.WriteHeader(200)
+		case "/epay/api.php":
 			if r.URL.Query().Get("key") != "fixture-payment-secret-old" || r.URL.Query().Get("pid") != "merchant-old" {
 				t.Error("accepted order lost original merchant credential")
 				w.WriteHeader(401)
@@ -107,7 +115,7 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 	u.Settings.Media.ImageKey = "fixture-image-secret-old"
 	u.Settings.Media.VideoKey = "fixture-video-secret-old"
 	u.Settings.Payment.Enabled = true
-	u.Settings.Payment.Origin = provider.URL
+	u.Settings.Payment.Origin = provider.URL + "/epay/"
 	u.Settings.Payment.PID = "merchant-old"
 	u.Settings.Payment.Key = "fixture-payment-secret-old"
 	raw := admin.json("PUT", "/api/v1/admin/settings", u, 200)
@@ -120,11 +128,20 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 	if v.Revision != 1 || !v.Readiness.Payment || !v.Readiness.Media || !v.Settings.Media.ImageKeyConfigured {
 		t.Fatal("saved settings not active", v)
 	}
+	if v.Settings.Payment.Origin != provider.URL+"/epay" {
+		t.Fatal("payment base path was lost or trailing slash was not normalized")
+	}
 	probe := serverData[struct {
 		OK bool `json:"ok"`
 	}](t, admin.json("POST", "/api/v1/admin/settings/test/media", map[string]any{}, 200))
 	if !probe.OK {
 		t.Fatal("saved gateway was not used by read-only probe")
+	}
+	probe = serverData[struct {
+		OK bool `json:"ok"`
+	}](t, admin.json("POST", "/api/v1/admin/settings/test/payment", map[string]any{}, 200))
+	if !probe.OK || paymentProbes.Load() != 1 {
+		t.Fatal("saved payment base path was not used by the read-only HEAD probe")
 	}
 	admin.json("POST", "/api/v1/admin/settings/test/storage", map[string]any{}, 200)
 	var encrypted, audit []byte
@@ -161,8 +178,15 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 		t.Fatal("shot association was not persisted in accepted task input")
 	}
 	order := serverData[commerce.Order](t, creator.json("POST", "/api/v1/payment/orders", map[string]string{"tier_id": "starter", "method": "alipay"}, 201))
-	if !strings.HasPrefix(order.CheckoutURL, provider.URL+"/submit.php?") {
+	if !strings.HasPrefix(order.CheckoutURL, provider.URL+"/epay/submit.php?") {
 		t.Fatal("runtime payment merchant was not used")
+	}
+	var orderProvider string
+	if err = db.QueryRow(context.Background(), "SELECT provider_origin FROM payment_orders WHERE id=$1", order.ID).Scan(&orderProvider); err != nil {
+		t.Fatal(err)
+	}
+	if orderProvider != provider.URL+"/epay" {
+		t.Fatal("accepted order did not retain its complete payment base path", orderProvider)
 	}
 	// Rotate everything and disable new checkout before processing old work.
 	u = settings.Update{Revision: v.Revision, Reason: "Rotate providers preserving accepted work", Settings: v.Settings}
@@ -172,7 +196,7 @@ func TestRuntimeSettingsRotateWithoutStrandingAcceptedWork(t *testing.T) {
 	u.Settings.Media.ImageKey = "fixture-image-secret-new"
 	u.Settings.Media.VideoKey = "fixture-video-secret-new"
 	u.Settings.Payment.Enabled = false
-	u.Settings.Payment.Origin = replacement.URL
+	u.Settings.Payment.Origin = replacement.URL + "/epay/"
 	u.Settings.Payment.PID = "merchant-new"
 	u.Settings.Payment.Key = "fixture-payment-secret-new"
 	v = serverData[settings.View](t, admin.json("PUT", "/api/v1/admin/settings", u, 200))

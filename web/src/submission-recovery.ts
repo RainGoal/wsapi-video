@@ -73,7 +73,8 @@ export const submissionWasRejected = (
   isRetry: boolean,
 ) =>
   // The server holds the quote lock and checks accepted tasks before this code.
-  (status === 409 && code === "quote_expired") ||
+  (status === 409 &&
+    (code === "quote_expired" || code === "product_unavailable")) ||
   (!isRetry &&
     ((status === 422 &&
       (code === "invalid_input" || code === "invalid_json")) ||

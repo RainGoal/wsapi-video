@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api";
 import { useStudio } from "../App";
 import type { Capabilities, PaymentTier, Product } from "../types";
@@ -6,6 +6,7 @@ import {
   productCapabilities,
   productDefinitionChanged,
 } from "./catalog-product";
+import { createSettingsOperationScope } from "./settings-operation";
 import { Empty, Icon, LoadingError, Modal, Notice, useResource } from "../ui";
 import {
   a,
@@ -61,6 +62,7 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
   const [editing, setEditing] = useState<AdminProduct | PaymentTier | null>(
       null,
     ),
+    [deleting, setDeleting] = useState<AdminProduct | PaymentTier | null>(null),
     [editingBusy, setEditingBusy] = useState(false),
     [search, setSearch] = useState(""),
     [status, setStatus] = useState(""),
@@ -80,26 +82,44 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
   function beginEditing(record: AdminProduct | PaymentTier) {
     if (editor.current.busy) return;
     editor.current = { record, busy: false };
+    setDeleting(null);
     setEditing(record);
+    setEditingBusy(false);
+  }
+  function beginDeleting(record: AdminProduct | PaymentTier) {
+    if (editor.current.busy) return;
+    editor.current = { record, busy: false };
+    setEditing(null);
+    setDeleting(record);
     setEditingBusy(false);
   }
   function closeEditing() {
     if (editor.current.busy) return;
     editor.current.record = null;
     setEditing(null);
+    setDeleting(null);
   }
   function reportBusy(record: AdminProduct | PaymentTier, busy: boolean) {
     if (editor.current.record !== record) return;
     editor.current.busy = busy;
     setEditingBusy(busy);
   }
-  function done(record: AdminProduct | PaymentTier) {
+  function done(record: AdminProduct | PaymentTier, deleted = false) {
     if (editor.current.record !== record) return;
     editor.current = { record: null, busy: false };
     setEditing(null);
+    setDeleting(null);
     setEditingBusy(false);
+    if (deleted) setPage(0);
     resource.refresh();
-    notify(a("业务配置已保存并记录审计", "Configuration saved and audited"));
+    notify(
+      deleted
+        ? a(
+            "配置已删除，历史记录已保留",
+            "Configuration deleted; history retained",
+          )
+        : a("业务配置已保存并记录审计", "Configuration saved and audited"),
+    );
   }
   return (
     <>
@@ -232,7 +252,7 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
                             <small className="cell-sub muted">
                               {(
                                 row as AdminProduct
-                              ).capabilities.aspect_ratios.join(" · ") || "—"}
+                              ).capabilities.aspect_ratios?.join(" · ") || "—"}
                             </small>
                           </>
                         ) : (
@@ -268,6 +288,12 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
                         >
                           {a("编辑配置", "Edit")}
                         </button>
+                        <button
+                          className="button subtle small danger-text"
+                          onClick={() => beginDeleting(structuredClone(row))}
+                        >
+                          {a("删除", "Delete")}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -291,6 +317,25 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
             )}
           />
         ))}
+      {deleting && (
+        <Modal
+          title={
+            kind === "products"
+              ? a("删除模型商品", "Delete model product")
+              : a("删除充值档位", "Delete credit package")
+          }
+          onClose={closeEditing}
+          closeDisabled={editingBusy}
+        >
+          <DeleteCatalogForm
+            record={deleting}
+            kind={kind}
+            onDone={() => done(deleting, true)}
+            onCancel={closeEditing}
+            onBusyChange={(busy) => reportBusy(deleting, busy)}
+          />
+        </Modal>
+      )}
       {editing && (
         <Modal
           title={
@@ -330,6 +375,91 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
     </>
   );
 }
+function DeleteCatalogForm({
+  record,
+  kind,
+  onDone,
+  onCancel,
+  onBusyChange,
+}: {
+  record: AdminProduct | PaymentTier;
+  kind: "products" | "tiers";
+  onDone: () => void;
+  onCancel: () => void;
+  onBusyChange: (busy: boolean) => void;
+}) {
+  const operations = useRef(createSettingsOperationScope()).current;
+  useEffect(() => operations.mount(), [operations]);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    void operations.run({
+      request: () =>
+        api(
+          `${kind === "products" ? "/admin/model-products" : "/admin/payment/tiers"}/${encodeURIComponent(record.id)}`,
+          "DELETE",
+          { version: record.version, reason },
+        ),
+      onStart: () => {
+        setBusy(true);
+        setError("");
+        onBusyChange(true);
+      },
+      onSuccess: onDone,
+      onError: (failure) => setError(errorMessage(failure)),
+      onFinish: () => {
+        setBusy(false);
+        onBusyChange(false);
+      },
+    });
+  }
+  return (
+    <form className="admin-editor-form" onSubmit={submit}>
+      <fieldset className="admin-edit-fieldset" disabled={busy}>
+        <p>
+          <strong>{record.name}</strong>{" "}
+          <span className="mono muted">{record.id}</span>
+        </p>
+        <Notice>
+          {kind === "products"
+            ? a(
+                "删除后商品将下架并从列表移除，已有任务、成品及账本记录保留。",
+                "Deleting unpublishes and removes the product from the catalog. Existing tasks, outputs and ledger records are retained.",
+              )
+            : a(
+                "删除后档位将下架并从列表移除，已有支付订单和到账记录保留。",
+                "Deleting unpublishes and removes the package from the catalog. Existing payment orders and credit records are retained.",
+              )}
+        </Notice>
+        <Reason value={reason} onChange={setReason} />
+        {error && <Notice error>{error}</Notice>}
+        <div className="admin-save-bar">
+          <span>
+            {a("删除操作将记录审计", "Deletion is recorded in the audit log")}
+          </span>
+          <div>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              {a("取消", "Cancel")}
+            </button>
+            <button className="button danger" disabled={busy}>
+              {busy
+                ? a("正在删除…", "Deleting…")
+                : a("确认删除", "Confirm deletion")}
+            </button>
+          </div>
+        </div>
+      </fieldset>
+    </form>
+  );
+}
+
 type LimitKey =
   | "max_reference_duration_seconds"
   | "max_reference_bytes"
@@ -352,11 +482,11 @@ function ProductForm({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [lists, setLists] = useState({
-    aspect_ratios: initial.capabilities.aspect_ratios.join(", "),
-    durations: initial.capabilities.durations.join(", "),
-    resolutions: initial.capabilities.resolutions.join(", "),
-    sizes: initial.capabilities.sizes.join(", "),
-    qualities: initial.capabilities.qualities.join(", "),
+    aspect_ratios: (initial.capabilities.aspect_ratios ?? []).join(", "),
+    durations: (initial.capabilities.durations ?? []).join(", "),
+    resolutions: (initial.capabilities.resolutions ?? []).join(", "),
+    sizes: (initial.capabilities.sizes ?? []).join(", "),
+    qualities: (initial.capabilities.qualities ?? []).join(", "),
   });
   const capabilities = productCapabilities(
     draft.kind,

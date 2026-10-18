@@ -27,7 +27,7 @@ func (s *Service) getOrder(ctx context.Context, userID, id string, admin bool) (
 	return scanOrder(s.db.QueryRow(ctx, "SELECT "+orderColumns+" FROM payment_orders WHERE id=$1 AND ($3 OR user_id=$2)", id, userID, admin))
 }
 func (s *Service) listTiers(ctx context.Context, all bool) ([]Tier, error) {
-	rows, err := s.db.Query(ctx, "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE $1 OR active ORDER BY amount_fen", all)
+	rows, err := s.db.Query(ctx, "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE deleted_at IS NULL AND ($1 OR active) ORDER BY amount_fen", all)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +71,16 @@ func (s *Service) createOrder(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, 503, "payment_unavailable", "充值服务尚未开放，演示模式不支持真实支付")
 		return
 	}
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	defer tx.Rollback(ctx)
 	var tier Tier
-	err = s.db.QueryRow(r.Context(), "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE id=$1 AND active", body.TierID).Scan(&tier.ID, &tier.Name, &tier.AmountFen, &tier.Credits, &tier.Active, &tier.Version)
+	// Keep new order acceptance and catalog deletion in a defined order.
+	err = tx.QueryRow(ctx, "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE id=$1 AND deleted_at IS NULL AND active FOR SHARE", body.TierID).Scan(&tier.ID, &tier.Name, &tier.AmountFen, &tier.Credits, &tier.Active, &tier.Version)
 	if err != nil {
 		dbError(w, err)
 		return
@@ -84,7 +92,10 @@ func (s *Service) createOrder(w http.ResponseWriter, r *http.Request) {
 		invalid(w, "支付参数无效")
 		return
 	}
-	_, err = s.db.Exec(r.Context(), "INSERT INTO payment_orders(id,user_id,out_trade_no,tier_id,tier_version,amount_fen,credits,method,credential_ref,merchant_pid,provider_origin,checkout_url,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", id, core.UserFrom(r.Context()).ID, no, tier.ID, tier.Version, tier.AmountFen, tier.Credits, body.Method, paymentConfig.EasyPayCredentialRef, paymentConfig.EasyPayPID, strings.TrimRight(paymentConfig.EasyPayOrigin, "/"), checkout, time.Now().Add(30*time.Minute))
+	_, err = tx.Exec(ctx, "INSERT INTO payment_orders(id,user_id,out_trade_no,tier_id,tier_version,amount_fen,credits,method,credential_ref,merchant_pid,provider_origin,checkout_url,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", id, core.UserFrom(ctx).ID, no, tier.ID, tier.Version, tier.AmountFen, tier.Credits, body.Method, paymentConfig.EasyPayCredentialRef, paymentConfig.EasyPayPID, strings.TrimRight(paymentConfig.EasyPayOrigin, "/"), checkout, time.Now().Add(30*time.Minute))
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
 	if err != nil {
 		dbError(w, err)
 		return

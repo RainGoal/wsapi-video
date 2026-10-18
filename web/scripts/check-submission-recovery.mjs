@@ -148,6 +148,8 @@ test("precise server refusal permits a new quote while generic conflicts retain 
     [402, "insufficient_credits", false],
     [409, "quote_expired", false],
     [409, "quote_expired", true],
+    [409, "product_unavailable", false],
+    [409, "product_unavailable", true],
   ]) {
     const storage = memoryStorage();
     persistPendingSubmission(storage, key, entry);

@@ -5,6 +5,8 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+
+	"wsapi-video/internal/payments"
 )
 
 func validOrigin(value string) bool {
@@ -48,8 +50,8 @@ func (s *Service) validate(v Settings) FieldErrors {
 	if v.Media.Origin == "" && (v.Media.ImageKey != "" || v.Media.VideoKey != "") {
 		e["media.origin"] = "填写凭证时必须配置网关地址"
 	}
-	if v.Payment.Origin != "" && !validOrigin(v.Payment.Origin) {
-		e["payment.origin"] = "支付接口必须是固定 HTTPS Origin"
+	if v.Payment.Origin != "" && payments.ValidateBaseURL(v.Payment.Origin, false) != nil {
+		e["payment.origin"] = "支付网关须为 HTTPS 基础地址，可含 /epay/ 等路径前缀，不含凭证、查询参数或片段"
 	}
 	if len(v.Payment.PID) > 128 || strings.ContainsAny(v.Payment.PID, "&=\r\n") {
 		e["payment.pid"] = "商户 ID 格式不正确"

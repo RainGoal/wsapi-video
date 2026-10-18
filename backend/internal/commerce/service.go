@@ -80,8 +80,10 @@ func (s *Service) Register(mux *http.ServeMux, protect func(http.Handler) http.H
 	a := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, admin(h)) }
 	a("GET /api/v1/admin/model-products", s.adminProducts)
 	a("PUT /api/v1/admin/model-products/{id}", s.saveProduct)
+	a("DELETE /api/v1/admin/model-products/{id}", s.deleteProduct)
 	a("GET /api/v1/admin/payment/tiers", s.adminTiers)
 	a("PUT /api/v1/admin/payment/tiers/{id}", s.saveTier)
+	a("DELETE /api/v1/admin/payment/tiers/{id}", s.deleteTier)
 	a("GET /api/v1/admin/tasks", s.adminTasks)
 	a("GET /api/v1/admin/tasks/{id}/procurement-reviews", s.procurementReviews)
 	a("POST /api/v1/admin/tasks/{id}/procurement-reviews", s.saveProcurementReview)
@@ -139,7 +141,7 @@ func (s *Service) listProducts(ctx context.Context, all bool) ([]Product, error)
 		}
 		current = g
 	}
-	rows, err := s.db.Query(ctx, "SELECT "+productColumns+" FROM model_products WHERE ($1 OR (active AND verified AND is_demo=$2)) ORDER BY kind,name", all, s.isDemo())
+	rows, err := s.db.Query(ctx, "SELECT "+productColumns+" FROM model_products WHERE deleted_at IS NULL AND ($1 OR (active AND verified AND is_demo=$2)) ORDER BY kind,name", all, s.isDemo())
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +305,7 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) {
 		dbError(w, err)
 		return
 	}
-	p, err := scanProduct(s.db.QueryRow(r.Context(), "SELECT "+productColumns+" FROM model_products WHERE id=$1 AND active AND verified AND is_demo=$2", in.ProductID, s.isDemo()))
+	p, err := scanProduct(s.db.QueryRow(r.Context(), "SELECT "+productColumns+" FROM model_products WHERE id=$1 AND deleted_at IS NULL AND active AND verified AND is_demo=$2", in.ProductID, s.isDemo()))
 	if err != nil {
 		dbError(w, err)
 		return
@@ -481,6 +483,19 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	if time.Now().After(expires) {
 		httpx.Fail(w, 409, "quote_expired", "报价已过期，请重新确认费用")
+		return
+	}
+	// Deleting a catalog entry stops new acceptance while preserving accepted
+	// task retries above and their immutable product snapshots. The shared lock
+	// orders this acceptance before or after a concurrent catalog deletion.
+	var availableProduct string
+	err = tx.QueryRow(ctx, "SELECT id FROM model_products WHERE id=$1 AND deleted_at IS NULL FOR SHARE", productID).Scan(&availableProduct)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpx.Fail(w, 409, "product_unavailable", "该模型商品已删除，请重新选择商品并报价")
+		return
+	}
+	if err != nil {
+		dbError(w, err)
 		return
 	}
 	var p Product

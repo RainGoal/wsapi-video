@@ -12,10 +12,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Config struct {
@@ -32,16 +34,36 @@ type Confirmation struct {
 	Paid             bool
 }
 
+// ValidateBaseURL accepts a fixed gateway base URL, including a path prefix.
+// Ambiguous paths are rejected rather than cleaned so requests keep that prefix.
+func ValidateBaseURL(value string, allowHTTP bool) error {
+	u, err := url.Parse(value)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Opaque != "" ||
+		(u.Scheme != "https" && !(allowHTTP && u.Scheme == "http")) {
+		return errors.New("EasyPay gateway requires a fixed HTTPS base URL")
+	}
+	if u.RawQuery != "" || u.ForceQuery || strings.Contains(value, "#") ||
+		u.RawPath != "" || strings.ContainsAny(u.Path, "\\%?#") || strings.IndexFunc(u.Path, unicode.IsControl) >= 0 {
+		return errors.New("EasyPay gateway must not contain credentials, query parameters, fragments or ambiguous paths")
+	}
+	if u.Path != "" && u.Path != "/" {
+		prefix := strings.TrimSuffix(u.Path, "/")
+		if prefix == "/" || path.Clean(prefix) != prefix {
+			return errors.New("EasyPay gateway path must not contain dot segments or repeated slashes")
+		}
+	}
+	return nil
+}
+
 func New(cfg Config) (*EasyPay, error) {
-	for _, s := range []string{cfg.Origin, cfg.NotifyURL, cfg.ReturnURL} {
+	if err := ValidateBaseURL(cfg.Origin, cfg.AllowHTTP); err != nil {
+		return nil, err
+	}
+	for _, s := range []string{cfg.NotifyURL, cfg.ReturnURL} {
 		u, e := url.Parse(s)
 		if e != nil || u.Host == "" || u.User != nil || u.Fragment != "" || (u.Scheme != "https" && !(cfg.AllowHTTP && u.Scheme == "http")) {
 			return nil, errors.New("EasyPay requires HTTPS URLs")
 		}
-	}
-	u, _ := url.Parse(cfg.Origin)
-	if u.RawQuery != "" || (u.Path != "" && u.Path != "/") {
-		return nil, errors.New("EasyPay origin must not contain a path or query")
 	}
 	if cfg.PID == "" || cfg.Key == "" || cfg.CredentialRef == "" {
 		return nil, errors.New("EasyPay credentials are missing")

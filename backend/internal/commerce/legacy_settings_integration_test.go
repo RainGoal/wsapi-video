@@ -18,7 +18,7 @@ func TestPostgresLegacyEnvironmentCredentialUpgrade(t *testing.T) {
 		StorageDriver: "local", SMTPPort: 587, Sub2APIOrigin: "https://legacy-media.example",
 		ImageCredential: "current-image", VideoCredential: "current-video",
 		MediaKeys:     map[string]string{"current-image": "current-image-key", "current-video": "current-video-key", "legacy-media": "legacy-media-key"},
-		EasyPayOrigin: "https://legacy-pay.example", EasyPayPID: "legacy-merchant", EasyPayCredentialRef: "current-payment",
+		EasyPayOrigin: "https://legacy-pay.example/epay", EasyPayPID: "legacy-merchant", EasyPayCredentialRef: "current-payment",
 		EasyPayKeys:      map[string]string{"current-payment": "current-payment-key", "legacy-payment": "legacy-payment-key"},
 		EasyPayNotifyURL: "https://studio.example/api/v1/payment/notify/easypay", EasyPayReturnURL: "https://studio.example/wallet",
 	}
@@ -41,6 +41,11 @@ func TestPostgresLegacyEnvironmentCredentialUpgrade(t *testing.T) {
 		if _, err = jobs.paymentAdapterContext(ctx, "legacy-payment", "https://different-pay.example", cfg.EasyPayPID); err == nil {
 			t.Fatal("legacy order accepted a different provider origin")
 		}
+		for _, origin := range []string{"https://legacy-pay.example", "https://legacy-pay.example/other-epay"} {
+			if _, err = jobs.paymentAdapterContext(ctx, "legacy-payment", origin, cfg.EasyPayPID); err == nil {
+				t.Fatal("legacy order accepted a different payment base path", origin)
+			}
+		}
 		if _, err = jobs.paymentAdapterContext(ctx, "legacy-payment", cfg.EasyPayOrigin, "different-merchant"); err == nil {
 			t.Fatal("legacy order accepted a different merchant")
 		}
@@ -58,7 +63,7 @@ func TestPostgresLegacyEnvironmentCredentialUpgrade(t *testing.T) {
 	u := settings.Update{Settings: st.Settings, Reason: "Rotate after legacy deployment upgrade"}
 	u.Settings.Media.Origin = "https://new-media.example"
 	u.Settings.Media.ImageKey = "new-image-key"
-	u.Settings.Payment.Origin = "https://new-pay.example"
+	u.Settings.Payment.Origin = "https://new-pay.example/epay/"
 	u.Settings.Payment.PID = "new-merchant"
 	u.Settings.Payment.Key = "new-payment-key"
 	if err = runtime.Save(ctx, actor, u); err != nil {

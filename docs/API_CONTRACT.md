@@ -62,6 +62,7 @@ Project：`id/user_id/name/description/status/cover_asset_id/revision/shots_revi
 - `POST /quotes`：项目、商品、提示词、参数与参考 asset ID；返回报价 ID、固定积分、输入/能力/价格快照及 expires_at。
 - `POST /tasks`：`{quote_id,request_key}`；同键同内容返回原任务，同键不同内容 409；事务内创建任务并冻结积分。
 - `409 quote_expired`：持有报价锁且确认该报价没有已受理任务后，才返回此明确拒绝；前端可清理原恢复记录并重新报价。通用 `409 conflict` 可能表示并发已受理，不能按状态码清除恢复信息。
+- `409 product_unavailable`：同样在持有报价锁且确认没有已受理任务后返回，表示商品已删除；可清理原恢复记录并选择其他商品重新报价。已受理任务的同键重试继续返回原任务。
 - `GET /tasks`、`GET /tasks/{id}`：只返回本人任务，支持项目/类型/状态过滤。
 - `POST /tasks/{id}/cancel`：按真实能力执行；未确认取消不释放。
 - `GET /wallet`：可用/冻结积分；`GET /wallet/ledger`：不可变流水列表。
@@ -71,14 +72,15 @@ Project：`id/user_id/name/description/status/cover_asset_id/revision/shots_revi
 
 创建结果不明确时保存 submission_unknown，不自动再次 POST。执行、交付、零售结算、采购核查状态独立保存。生成成功且平台归档成功才结算。
 
-浏览器提交前按账号/项目保存并读回原 `quote_id/request_key`，使用同名 Web Lock 串行化同源标签中的恢复记录写入和清理；网络请求不持有此锁。不支持 Web Locks 或无法可靠保存记录时不发送生成请求。历史不确定提交遇到鉴权、限流或通用冲突仍保留原键；只有有效任务回执或明确 `quote_expired` 才结束恢复。回执已确认但本地清理失败时，本页只重试清理。
+浏览器提交前按账号/项目保存并读回原 `quote_id/request_key`，使用同名 Web Lock 串行化同源标签中的恢复记录写入和清理；网络请求不持有此锁。不支持 Web Locks 或无法可靠保存记录时不发送生成请求。历史不确定提交遇到鉴权、限流或通用冲突仍保留原键；只有有效任务回执或明确 `quote_expired` / `product_unavailable` 才结束恢复。回执已确认但本地清理失败时，本页只重试清理。
 
 ## 基础后台
 
 所有 `/admin/*` 复用认证与管理员鉴权，调价、停用、补单、退款/调账须有审计。
 
 - 用户列表/状态修改/会话撤销。
-- 商品列表/上架/能力和零售价配置，充值档位配置。
+- 商品列表/上架/能力和零售价配置，充值档位配置。商品上架读取后台当前对应图片或视频凭证；用户可售列表、报价及生成继续检查生产存储是否就绪。
+- `DELETE /admin/model-products/{id}`、`DELETE /admin/payment/tiers/{id}`：请求 `{version,reason}`，成功返回 `{ok:true,id,version}`。版本落后返回 409，缺失版本或原因无效返回 422，不存在或已删除返回 404。删除与审计在同一事务完成，自动下架并从目录列表移除，保留已有任务、订单、账本与快照；删除的 ID 不可复用。
 - 订单列表/查单补偿、异常任务列表/决议、任务退款、积分调整。
 - 每任务采购人工核对记录：管理员读取/追加结论、原因与纯文本依据，独立于异常处置和零售账务，见 [完整契约](PROCUREMENT_REVIEW_CONTRACT.md)。
 - 审计与存储/异常概览。

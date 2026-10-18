@@ -1,6 +1,7 @@
 package commerce
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -69,6 +70,23 @@ func sameProductCapabilities(a, b Capabilities) bool {
 	return reflect.DeepEqual(normalize(a), normalize(b))
 }
 
+// Publishing validates the configured credential for this model kind. Storage
+// readiness still gates user listings, quotes and actual generation separately.
+func (s *Service) productCredential(ctx context.Context, kind string) (string, error) {
+	if s.settings == nil {
+		return s.gateway.Credential(kind)
+	}
+	c, err := s.settings.RuntimeConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	g, err := media.NewConnector(media.Config{Origin: c.Sub2APIOrigin, Keys: c.MediaKeys, ImageCredential: c.ImageCredential, VideoCredential: c.VideoCredential, OutputOrigins: c.MediaOutputOrigins, MaxMediaBytes: c.MaxMediaBytes})
+	if err != nil {
+		return "", err
+	}
+	return g.Credential(kind)
+}
+
 func (s *Service) saveProduct(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Product
@@ -92,7 +110,7 @@ func (s *Service) saveProduct(w http.ResponseWriter, r *http.Request) {
 	// the final product is still being published after definition comparison.
 	var credentialErr error
 	if p.Active && !p.Demo {
-		_, credentialErr = s.gateway.Credential(p.Kind)
+		_, credentialErr = s.productCredential(r.Context(), p.Kind)
 	}
 	ctx := r.Context()
 	tx, err := s.db.Begin(ctx)
@@ -101,10 +119,21 @@ func (s *Service) saveProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	old, err := scanProduct(tx.QueryRow(ctx, "SELECT "+productColumns+" FROM model_products WHERE id=$1 FOR UPDATE", p.ID))
+	old, err := scanProduct(tx.QueryRow(ctx, "SELECT "+productColumns+" FROM model_products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", p.ID))
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		dbError(w, err)
 		return
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		var deleted bool
+		if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM model_products WHERE id=$1 AND deleted_at IS NOT NULL)", p.ID).Scan(&deleted); e != nil {
+			dbError(w, e)
+			return
+		}
+		if deleted {
+			conflict(w, "该模型商品已删除，不能复用其 ID")
+			return
+		}
 	}
 	if err == nil && old.Version != p.Version {
 		conflict(w, "商品已更新，请重新加载")
@@ -135,9 +164,9 @@ func (s *Service) saveProduct(w http.ResponseWriter, r *http.Request) {
 	c, _ := json.Marshal(p.Capabilities)
 	// A missing row cannot be locked by SELECT FOR UPDATE. Check the observed
 	// version again in the write so a concurrent creation cannot be overwritten.
-	tag, err := tx.Exec(ctx, "INSERT INTO model_products(id,name,kind,model,credits,version,capabilities,active,verified,is_demo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,model=excluded.model,credits=excluded.credits,version=excluded.version,capabilities=excluded.capabilities,active=excluded.active,verified=excluded.verified,updated_at=now() WHERE model_products.version=$11", p.ID, p.Name, p.Kind, p.Model, p.Credits, p.Version, c, p.Active, p.Verified, p.Demo, old.Version)
+	tag, err := tx.Exec(ctx, "INSERT INTO model_products(id,name,kind,model,credits,version,capabilities,active,verified,is_demo) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,model=excluded.model,credits=excluded.credits,version=excluded.version,capabilities=excluded.capabilities,active=excluded.active,verified=excluded.verified,updated_at=now() WHERE model_products.version=$11 AND model_products.deleted_at IS NULL", p.ID, p.Name, p.Kind, p.Model, p.Credits, p.Version, c, p.Active, p.Verified, p.Demo, old.Version)
 	if err == nil && tag.RowsAffected() == 0 {
-		conflict(w, "商品已更新，请重新加载")
+		conflict(w, "商品已更新或删除，请重新加载；已删除 ID 不可复用")
 		return
 	}
 	if err == nil {
@@ -160,6 +189,63 @@ func (s *Service) adminTiers(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, 200, map[string]any{"items": out})
 }
+
+func (s *Service) deleteProduct(w http.ResponseWriter, r *http.Request) {
+	s.deleteCatalog(w, r, "model_products", "product.delete")
+}
+
+func (s *Service) deleteTier(w http.ResponseWriter, r *http.Request) {
+	s.deleteCatalog(w, r, "payment_tiers", "payment_tier.delete")
+}
+
+// table and action are fixed by the handlers above, never request parameters.
+func (s *Service) deleteCatalog(w http.ResponseWriter, r *http.Request, table, action string) {
+	var body struct {
+		Version int64  `json:"version"`
+		Reason  string `json:"reason"`
+	}
+	if !httpx.Decode(w, r, &body) || !requireReason(w, body.Reason) {
+		return
+	}
+	if body.Version < 1 {
+		invalid(w, "请提供当前版本后再删除")
+		return
+	}
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	id := r.PathValue("id")
+	var version int64
+	err = tx.QueryRow(ctx, "SELECT version FROM "+table+" WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", id).Scan(&version)
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	if version != body.Version {
+		conflict(w, "目录项已更新，请重新加载后删除")
+		return
+	}
+	_, err = tx.Exec(ctx, "UPDATE "+table+" SET deleted_at=now(),active=false,version=version+1,updated_at=now() WHERE id=$1", id)
+	if err == nil {
+		err = audit(ctx, tx, core.UserFrom(ctx).ID, action, id, body.Reason, map[string]any{
+			"before": map[string]any{"version": version},
+			"after":  map[string]any{"version": version + 1, "active": false, "deleted": true},
+		})
+	}
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
+	if err != nil {
+		dbError(w, err)
+		return
+	}
+	httpx.JSON(w, 200, map[string]any{"ok": true, "id": id, "version": version + 1})
+}
+
 func (s *Service) saveTier(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Tier
@@ -188,19 +274,30 @@ func (s *Service) saveTier(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 	var old Tier
-	err = tx.QueryRow(ctx, "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE id=$1 FOR UPDATE", t.ID).Scan(&old.ID, &old.Name, &old.AmountFen, &old.Credits, &old.Active, &old.Version)
+	err = tx.QueryRow(ctx, "SELECT id,name,amount_fen,credits,active,version FROM payment_tiers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", t.ID).Scan(&old.ID, &old.Name, &old.AmountFen, &old.Credits, &old.Active, &old.Version)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		dbError(w, err)
 		return
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		var deleted bool
+		if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM payment_tiers WHERE id=$1 AND deleted_at IS NOT NULL)", t.ID).Scan(&deleted); e != nil {
+			dbError(w, e)
+			return
+		}
+		if deleted {
+			conflict(w, "该充值档位已删除，不能复用其 ID")
+			return
+		}
 	}
 	if err == nil && old.Version != t.Version {
 		conflict(w, "档位已更新，请重新加载")
 		return
 	}
 	t.Version = old.Version + 1
-	tag, err := tx.Exec(ctx, "INSERT INTO payment_tiers(id,name,amount_fen,credits,active,version) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=excluded.name,amount_fen=excluded.amount_fen,credits=excluded.credits,active=excluded.active,version=excluded.version,updated_at=now() WHERE payment_tiers.version=$7", t.ID, t.Name, t.AmountFen, t.Credits, t.Active, t.Version, old.Version)
+	tag, err := tx.Exec(ctx, "INSERT INTO payment_tiers(id,name,amount_fen,credits,active,version) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=excluded.name,amount_fen=excluded.amount_fen,credits=excluded.credits,active=excluded.active,version=excluded.version,updated_at=now() WHERE payment_tiers.version=$7 AND payment_tiers.deleted_at IS NULL", t.ID, t.Name, t.AmountFen, t.Credits, t.Active, t.Version, old.Version)
 	if err == nil && tag.RowsAffected() == 0 {
-		conflict(w, "档位已更新，请重新加载")
+		conflict(w, "档位已更新或删除，请重新加载；已删除 ID 不可复用")
 		return
 	}
 	if err == nil {

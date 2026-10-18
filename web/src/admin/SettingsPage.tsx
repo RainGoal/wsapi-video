@@ -566,10 +566,14 @@ export function SettingsPage() {
               {input(
                 "payment",
                 "origin",
-                a("易支付服务地址", "EasyPay origin"),
+                a("易支付服务地址", "EasyPay gateway URL"),
                 {
                   type: "url",
-                  placeholder: "https://pay.example.com",
+                  placeholder: "https://pay.example.com/epay/",
+                  hint: a(
+                    "填写服务商提供的 HTTPS 网关基础地址，保留 /epay/ 等路径前缀；无需填写 submit.php 或查询参数。",
+                    "Use the provider's HTTPS gateway base URL, keeping any path prefix such as /epay/. Do not append submit.php or query parameters.",
+                  ),
                 },
               )}
               {input("payment", "pid", a("商户编号 PID", "Merchant PID"))}
