@@ -50,10 +50,15 @@ export function duplicateCanvasSelection(graph: Graph, selected: string[]) {
       id: ids.get(node.id)!,
       position: { x: node.position.x + 40, y: node.position.y + 40 },
       metadata: {
-        ...node.metadata,
+        ...structuredClone(node.metadata),
         groupId: node.metadata?.groupId
           ? ids.get(node.metadata.groupId)
           : undefined,
+        generationSourceNodeId:
+          typeof node.metadata?.generationSourceNodeId === "string"
+            ? ids.get(node.metadata.generationSourceNodeId) ||
+              node.metadata.generationSourceNodeId
+            : undefined,
       },
     }));
   const connections = graph.connections

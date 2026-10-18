@@ -1,0 +1,136 @@
+.canvas-node-composer-overlay {
+  position: absolute;
+  z-index: 10;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: #f1ede5;
+  touch-action: auto;
+}
+.canvas-node-placeholder {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px;
+  color: #8f9489;
+  text-align: center;
+}
+.canvas-node-placeholder-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #ffffff06;
+  color: #9ca493;
+}
+.canvas-node-placeholder > span:not(.canvas-node-placeholder-icon) {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+}
+.canvas-node-placeholder small {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.canvas-node-hover-toolbar {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid #494b44;
+  border-radius: 12px;
+  background: #25272bf5;
+  box-shadow: 0 8px 28px #0003;
+  transform: translate(-50%, -100%);
+}
+.canvas-node-hover-toolbar button,
+.canvas-node-hover-toolbar a {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  color: #d4d7ce;
+}
+.canvas-node-hover-toolbar button:hover,
+.canvas-node-hover-toolbar a:hover {
+  background: #ffffff0c;
+}
+.canvas-node-hover-toolbar .danger-text {
+  color: var(--red);
+}
+.canvas-reference-picking-hint,
+.canvas-selection-actions {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid #63533e;
+  border-radius: 10px;
+  background: #25272af5;
+  color: #dfc7a3;
+  box-shadow: 0 6px 20px #0003;
+  font-size: 11px;
+}
+.canvas-reference-picking-hint {
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.canvas-reference-picking-hint button,
+.canvas-selection-actions button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: inherit;
+  background: #ffffff08;
+  cursor: pointer;
+}
+.canvas-selection-actions {
+  top: 14px;
+  right: 16px;
+}
+.canvas-selection-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.canvas-layout .node-reference-pickable {
+  cursor: crosshair;
+  outline: 2px dashed #d7ab6a;
+  outline-offset: 4px;
+}
+.canvas-layout .node-reference-pickable:hover {
+  outline-style: solid;
+  box-shadow: 0 0 0 8px #d7ab6a22;
+}
+.canvas-reference-picking .node-port {
+  pointer-events: none;
+  opacity: 0.25;
+}
+@media (max-width: 640px) {
+  .canvas-node-composer-overlay {
+    border-radius: 12px;
+  }
+  .canvas-selection-actions {
+    top: 56px;
+    right: 12px;
+  }
+  .canvas-reference-picking-hint {
+    top: 58px;
+    gap: 5px;
+    max-width: calc(100% - 24px);
+    font-size: 10px;
+  }
+}

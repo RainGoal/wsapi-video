@@ -8,8 +8,17 @@ import { CandidateCompare } from "./CandidateCompare";
 import { AssetOrigin, AssetReferences } from "./AssetReferences";
 import { workspaceLocation, type WorkspaceView } from "./asset-references";
 import { useAllItems } from "./pagination";
-import { addAcceptedTask, reconcileGeneratedNodes } from "./creation";
-import { collectCanvasReferences } from "./lib/canvas/canvas-references";
+import {
+  addAcceptedTask,
+  canvasReferenceSelection,
+  canvasGenerationDefaults,
+  readGenerationDraft,
+  reconcileGeneratedNodes,
+} from "./creation";
+import {
+  collectCanvasReferences,
+  validateReferenceConnection,
+} from "./lib/canvas/canvas-references";
 import {
   checkpointCanvasHistory,
   createCanvasHistory,
@@ -19,6 +28,7 @@ import {
   CanvasNodeType,
   emptyGraph,
   type CanvasNodeData,
+  type GenerationDraft,
   type Graph,
 } from "./types/canvas";
 import type { Asset, CanvasDocument, Project, Task } from "./types";
@@ -79,6 +89,18 @@ export function Workspace({
     saving = useRef(false),
     needsSaveConfirmation = useRef(false),
     uploadInput = useRef<HTMLInputElement>(null);
+  const draftEdit = useRef<{
+    nodeId: string;
+    graph: Graph;
+    time: number;
+  } | null>(null);
+  const workspaceLive = useRef(true);
+  useEffect(() => {
+    workspaceLive.current = true;
+    return () => {
+      workspaceLive.current = false;
+    };
+  }, []);
   graphRef.current = graph;
   const draftKey = `frame:draft:${user.id}:${projectId}`;
   const load = useCallback(async () => {
@@ -137,6 +159,38 @@ export function Workspace({
     },
     [change],
   );
+  function updateNodeDraft(nodeId: string, nextDraft: GenerationDraft) {
+    const current = graphRef.current;
+    const node = current.nodes.find((item) => item.id === nodeId);
+    if (
+      !node ||
+      JSON.stringify(node.metadata?.generationDraft) ===
+        JSON.stringify(nextDraft)
+    )
+      return;
+    const now = Date.now();
+    const previous = draftEdit.current;
+    if (
+      !previous ||
+      previous.nodeId !== nodeId ||
+      previous.graph !== current ||
+      now - previous.time > 1200
+    )
+      checkpointCanvasHistory(canvasHistory.current, current);
+    const next = {
+      ...current,
+      nodes: current.nodes.map((item) =>
+        item.id === nodeId
+          ? {
+              ...item,
+              metadata: { ...item.metadata, generationDraft: nextDraft },
+            }
+          : item,
+      ),
+    };
+    draftEdit.current = { nodeId, graph: next, time: now };
+    change(next);
+  }
   const save = useCallback(async () => {
     if (!loaded || saving.current || saveState === "conflict") return;
     const snapshot = graphRef.current,
@@ -376,24 +430,66 @@ export function Workspace({
     notify(t("素材已加入画布"));
   }
   async function upload(files: FileList | null) {
-    if (!files?.length) return;
+    if (!files?.length) return [];
     setUploading(true);
-    let count = 0;
+    const uploaded: Asset[] = [];
     for (const file of Array.from(files)) {
       const form = new FormData();
       form.append("file", file);
       form.append("project_id", projectId);
       try {
-        await api<Asset>("/assets", "POST", form);
-        count++;
+        uploaded.push(await api<Asset>("/assets", "POST", form));
       } catch (reason) {
         notify(`${file.name}：${errorMessage(reason)}`, true);
       }
     }
     setUploading(false);
-    assets.refresh();
-    if (count) notify(t("已上传 {0} 个素材", count));
+    if (uploaded.length) {
+      assets.setData((current) => ({
+        ...current,
+        items: [...uploaded, ...current.items],
+      }));
+      notify(t("已上传 {0} 个素材", uploaded.length));
+    }
     if (uploadInput.current) uploadInput.current.value = "";
+    return uploaded;
+  }
+  async function uploadNodeReferences(nodeId: string, files: FileList) {
+    const uploaded = await upload(files);
+    if (!workspaceLive.current || !uploaded.length) return uploaded;
+    const node = graphRef.current.nodes.find((item) => item.id === nodeId);
+    if (node) {
+      const linked = collectCanvasReferences(graphRef.current, nodeId).assetIds;
+      const defaults = canvasGenerationDefaults(node, undefined, linked);
+      const selection = canvasReferenceSelection(node, defaults.referenceIds);
+      const currentDraft = readGenerationDraft(
+        node.metadata?.generationDraft,
+      ) || {
+        kind: defaults.kind,
+        productId: node.metadata?.productId || "",
+        prompt: defaults.prompt,
+        ratio: "",
+        duration: 0,
+        resolution: "",
+        size: "",
+        quality: "",
+        audio: false,
+        referenceIds: selection.referenceIds,
+        startFrameId: selection.startFrameId,
+        endFrameId: selection.endFrameId,
+        connectedAssetIds: defaults.referenceIds,
+      };
+      updateNodeDraft(nodeId, {
+        ...currentDraft,
+        referenceIds: [
+          ...new Set([
+            ...currentDraft.referenceIds,
+            ...uploaded.map((asset) => asset.id),
+          ]),
+        ],
+      });
+    }
+    return uploaded;
   }
   async function setCover(asset: Asset) {
     if (!project.data) return;
@@ -423,10 +519,119 @@ export function Workspace({
   const projectAssetList = assetKind
     ? assets.data.items.filter((asset) => asset.kind === assetKind)
     : assets.data.items;
-  const canvasReferences =
-    generator?.node?.type === CanvasNodeType.Config
-      ? collectCanvasReferences(canvasGraph, generator.node.id)
+  function referencesFor(node?: CanvasNodeData) {
+    const linked = node
+      ? collectCanvasReferences(canvasGraph, node.id)
       : { assetIds: [], notes: [], issues: [] };
+    return {
+      ...linked,
+      assetIds: [
+        ...new Set(
+          [...linked.assetIds, node?.metadata?.assetId].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      ],
+    };
+  }
+  const canvasReferences = referencesFor(generator?.node);
+  function acceptTask(task: Task, sourceId?: string) {
+    if (!workspaceLive.current) return false;
+    const current = graphRef.current;
+    const liveGraph = reconcileGeneratedNodes(
+      current,
+      taskList,
+      assets.data.items,
+    );
+    const source = liveGraph.nodes.find((item) => item.id === sourceId);
+    const connected = source
+      ? [
+          ...collectCanvasReferences(liveGraph, source.id).assetIds,
+          ...(source.metadata?.assetId ? [source.metadata.assetId] : []),
+        ]
+      : undefined;
+    commitCanvas(
+      addAcceptedTask(
+        current,
+        task,
+        task.kind === "video" ? t("视频创作") : t("图片创作"),
+        sourceId,
+        connected,
+      ),
+    );
+    tasks.refresh();
+    refreshWallet();
+    notify(t("生成任务已受理，离开页面后仍会继续执行"));
+    return true;
+  }
+  function pickReference(targetId: string, assetId: string) {
+    const current = graphRef.current;
+    const liveGraph = reconcileGeneratedNodes(
+      current,
+      taskList,
+      assets.data.items,
+    );
+    const target = liveGraph.nodes.find((item) => item.id === targetId);
+    if (!target) return;
+    const source = liveGraph.nodes.find(
+      (item) => item.id !== targetId && item.metadata?.assetId === assetId,
+    );
+    if (!source) return;
+    const invalid = validateReferenceConnection(liveGraph, source.id, targetId);
+    if (invalid && invalid !== "duplicate") return;
+    const links = collectCanvasReferences(liveGraph, targetId);
+    const connectedIds = [
+      ...new Set([
+        ...links.assetIds,
+        ...(target.metadata?.assetId ? [target.metadata.assetId] : []),
+      ]),
+    ];
+    const defaults = canvasGenerationDefaults(target);
+    const selection = canvasReferenceSelection(target, connectedIds);
+    const previous = readGenerationDraft(target.metadata?.generationDraft);
+    const nextDraft: GenerationDraft = {
+      kind: defaults.kind,
+      productId: target.metadata?.productId || "",
+      prompt: defaults.prompt,
+      ratio: "",
+      duration: 0,
+      resolution: "",
+      size: "",
+      quality: "",
+      audio: false,
+      ...previous,
+      referenceIds: [...new Set([...selection.referenceIds, assetId])].filter(
+        (id) => id !== selection.startFrameId && id !== selection.endFrameId,
+      ),
+      startFrameId: selection.startFrameId,
+      endFrameId: selection.endFrameId,
+      connectedAssetIds: [
+        ...new Set([
+          ...connectedIds,
+          ...(target.metadata?.generationSourceNodeId === source.id
+            ? []
+            : [assetId]),
+        ]),
+      ],
+    };
+    const connection = !invalid
+      ? { id: crypto.randomUUID(), fromNodeId: source.id, toNodeId: targetId }
+      : undefined;
+    commitCanvas({
+      ...current,
+      nodes: current.nodes.map((item) =>
+        item.id === targetId
+          ? {
+              ...item,
+              metadata: { ...item.metadata, generationDraft: nextDraft },
+            }
+          : item,
+      ),
+      connections: connection
+        ? [...current.connections, connection]
+        : current.connections,
+    });
+  }
   return (
     <div className="workspace">
       <div className="workspace-toolbar">
@@ -597,6 +802,36 @@ export function Workspace({
               onShowTask={(taskId) => navigate("tasks", taskId)}
               onAssetLibrary={() => setLibrary(!library)}
               onCompare={setCanvasComparison}
+              onPickReference={pickReference}
+              renderComposer={(node, controls) => {
+                const references = referencesFor(node);
+                return (
+                  <Generate
+                    key={node.id}
+                    presentation="inline"
+                    projectId={projectId}
+                    assets={assets.data.items}
+                    node={node}
+                    initialReferenceIds={references.assetIds}
+                    referenceNotes={references.notes}
+                    referenceIssues={references.issues}
+                    onClose={controls.onClose}
+                    onDraftChange={(nextDraft) =>
+                      updateNodeDraft(node.id, nextDraft)
+                    }
+                    onPickReferences={controls.onPickReferences}
+                    onUploadReferences={(files) =>
+                      uploadNodeReferences(node.id, files)
+                    }
+                    onCreated={(task, recovered, sourceId) =>
+                      acceptTask(
+                        task,
+                        sourceId || (recovered ? undefined : node.id),
+                      )
+                    }
+                  />
+                );
+              }}
             />
           )}
           {view === "assets" && (
@@ -779,46 +1014,20 @@ export function Workspace({
           assets={assets.data.items}
           node={generator.node}
           initialKind={generator.kind}
-          initialReferenceIds={
-            generator.node
-              ? [
-                  ...new Set(
-                    [
-                      ...canvasReferences.assetIds,
-                      generator.node.metadata?.assetId,
-                    ].filter((id): id is string => Boolean(id)),
-                  ),
-                ]
-              : []
-          }
+          initialReferenceIds={canvasReferences.assetIds}
           referenceNotes={canvasReferences.notes}
           referenceIssues={canvasReferences.issues}
           onClose={() => setGenerator(null)}
-          onCreated={(task, recovered) => {
-            const current = graphRef.current;
-            commitCanvas(
-              addAcceptedTask(
-                current,
+          onCreated={(task, recovered, sourceId) => {
+            if (
+              !acceptTask(
                 task,
-                task.kind === "video" ? t("视频创作") : t("图片创作"),
-                recovered ? undefined : generator.node?.id,
-                !recovered && generator.node?.type === CanvasNodeType.Config
-                  ? collectCanvasReferences(
-                      reconcileGeneratedNodes(
-                        current,
-                        taskList,
-                        assets.data.items,
-                      ),
-                      generator.node.id,
-                    ).assetIds
-                  : undefined,
-              ),
-            );
+                sourceId || (recovered ? undefined : generator.node?.id),
+              )
+            )
+              return false;
             setGenerator(null);
-            setQueue(true);
-            tasks.refresh();
-            refreshWallet();
-            notify(t("生成任务已受理，离开页面后仍会继续执行"));
+            return true;
           }}
         />
       )}

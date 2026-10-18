@@ -1,13 +1,20 @@
 import { t } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InfiniteCanvas } from "./components/canvas/infinite-canvas";
+import { CanvasNodePlaceholder } from "./components/canvas/canvas-node-placeholder";
+import { CanvasNodeHoverToolbar } from "./components/canvas/canvas-node-hover-toolbar";
+import {
+  ConnectionCreateMenu,
+  NodeCreateMenu,
+  type PendingConnectionCreate,
+} from "./components/canvas/canvas-create-menus";
 import {
   ActiveConnectionPath,
   ConnectionPath,
 } from "./components/canvas/canvas-connections";
 import {
   canOutputReference,
-  collectCanvasReferences,
+  canReceiveReference,
   validateReferenceConnection,
 } from "./lib/canvas/canvas-references";
 import {
@@ -21,6 +28,7 @@ import {
   type CanvasHistory,
 } from "./lib/canvas/canvas-history";
 import "./canvas-interactions.css";
+import "./canvas-node-composer-overlay.css";
 import {
   applyGroupSelection,
   applyUngroupSelection,
@@ -39,7 +47,6 @@ import {
   type Position,
 } from "./types/canvas";
 import type { Asset } from "./types";
-import { readGenerationInput } from "./creation";
 import { Icon, Modal } from "./ui";
 type Props = {
   graph: Graph;
@@ -50,16 +57,22 @@ type Props = {
   onAssetLibrary: () => void;
   onShowTask?: (taskId: string) => void;
   onCompare?: (assets: Asset[]) => void;
+  renderComposer?: (
+    node: CanvasNodeData,
+    controls: { onPickReferences: () => void; onClose: () => void },
+  ) => React.ReactNode;
+  onPickReference?: (targetNodeId: string, assetId: string) => void;
 };
 export function CanvasEditor({
   graph,
   history,
   assets,
   onChange,
-  onGenerate,
   onAssetLibrary,
   onShowTask,
   onCompare,
+  renderComposer,
+  onPickReference,
 }: Props) {
   const layout = useRef<HTMLDivElement>(null),
     container = useRef<HTMLDivElement>(null),
@@ -81,6 +94,15 @@ export function CanvasEditor({
       end: Position;
     } | null>(null),
     [preview, setPreview] = useState<Asset | null>(null),
+    [composerNodeId, setComposerNodeId] = useState<string | null>(null),
+    [pickingReferenceFor, setPickingReferenceFor] = useState<string | null>(
+      null,
+    ),
+    [createMenu, setCreateMenu] = useState<{
+      position: Position;
+      connection?: ConnectionHandle;
+    } | null>(null),
+    [stageSize, setStageSize] = useState({ width: 960, height: 640 }),
     [, setHistoryVersion] = useState(0);
   const drag = useRef<{
     pointerId: number;
@@ -90,6 +112,9 @@ export function CanvasEditor({
     moved: boolean;
     touch: boolean;
     selection: string[];
+    selectionBefore: string[];
+    shiftKey: boolean;
+    nodeId: string;
   } | null>(null);
   const spacePressed = useRef(false);
   const connectionRef = useRef(connection);
@@ -99,6 +124,16 @@ export function CanvasEditor({
     moved: boolean;
   } | null>(null);
   connectionRef.current = connection;
+  const closeCreateMenu = useCallback(() => setCreateMenu(null), []);
+  useEffect(() => {
+    const stage = container.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(() =>
+      setStageSize({ width: stage.clientWidth, height: stage.clientHeight }),
+    );
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
   const commit = useCallback(
     (next: Graph, snapshot = true) => {
       if (snapshot) checkpointCanvasHistory(history, graphRef.current);
@@ -138,6 +173,14 @@ export function CanvasEditor({
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (!layout.current?.contains(target)) return;
+      if (event.key === "Escape") {
+        if (pickingReferenceFor) {
+          setPickingReferenceFor(null);
+          return;
+        }
+        setCreateMenu(null);
+        setComposerNodeId(null);
+      }
       if (
         target.closest(
           "input,textarea,select,[contenteditable=true],[role=dialog]",
@@ -187,7 +230,7 @@ export function CanvasEditor({
       window.removeEventListener("keyup", release);
       window.removeEventListener("blur", blur);
     };
-  }, [undo, redo, duplicate, remove]);
+  }, [undo, redo, duplicate, remove, pickingReferenceFor]);
   const world = useCallback((x: number, y: number) => {
     const bounds = container.current!.getBoundingClientRect(),
       v = graphRef.current.viewport;
@@ -250,6 +293,9 @@ export function CanvasEditor({
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.focus({ preventScroll: true });
+    setComposerNodeId(null);
+    setCreateMenu(null);
+    setPickingReferenceFor(null);
     if (connectionRef.current) {
       if (connectionRef.current.nodeId === node.id) cancelConnection();
       else finishConnection(node.id);
@@ -319,10 +365,18 @@ export function CanvasEditor({
         ?.closest<HTMLElement>("[data-node-id]")?.dataset.nodeId;
       if (targetId) finishConnection(targetId);
       else {
+        const source = connectionRef.current;
+        const target = document.elementFromPoint(event.clientX, event.clientY);
+        const isCanvas =
+          target &&
+          container.current?.contains(target) &&
+          !target.closest("[data-canvas-no-zoom],[data-connection-id]");
+        if (source && isCanvas)
+          setCreateMenu({
+            position: world(event.clientX, event.clientY),
+            connection: source,
+          });
         cancelConnection();
-        setConnectionMessage(
-          t("未连接：请拖到创作节点的参考端口，或点击两端连接"),
-        );
       }
     }
     const cancel = () => cancelConnection();
@@ -380,8 +434,12 @@ export function CanvasEditor({
       graphRef.current = next;
       onChange(next);
     }
-    function end(event: PointerEvent) {
-      if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+    function end(event?: PointerEvent) {
+      if (
+        !drag.current ||
+        (event && drag.current.pointerId !== event.pointerId)
+      )
+        return;
       if (drag.current.moved) {
         const ids = new Set(drag.current.ids);
         const nodes = graphRef.current.nodes.map((node) => {
@@ -398,19 +456,53 @@ export function CanvasEditor({
             },
           };
         });
-        onChange({ ...graphRef.current, nodes });
+        const next = { ...graphRef.current, nodes };
+        graphRef.current = next;
+        onChange(next);
       }
-      if (drag.current.touch && event.type !== "pointercancel")
+      if (event && drag.current.touch && event.type !== "pointercancel")
         setSelected(drag.current.selection);
+      if (event && !drag.current.moved && event.type !== "pointercancel") {
+        const current = drag.current;
+        setSelected(
+          current.shiftKey
+            ? current.selectionBefore.includes(current.nodeId)
+              ? current.selectionBefore.filter((id) => id !== current.nodeId)
+              : [...current.selectionBefore, current.nodeId]
+            : [current.nodeId],
+        );
+        const clicked = graphRef.current.nodes.find(
+          (node) => node.id === current.nodeId,
+        );
+        setComposerNodeId(
+          !current.shiftKey &&
+            clicked &&
+            [
+              CanvasNodeType.Image,
+              CanvasNodeType.Video,
+              CanvasNodeType.Config,
+            ].includes(clicked.type)
+            ? clicked.id
+            : null,
+        );
+      }
       drag.current = null;
+    }
+    function blur() {
+      // Keep a completed move and its existing single history checkpoint.
+      // A lost pointer must never resume dragging when the window regains focus.
+      end();
+      setBox(null);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", blur);
     };
   }, [history, onChange]);
   useEffect(() => {
@@ -454,8 +546,18 @@ export function CanvasEditor({
     generationKind: "image" | "video" = "image",
   ) {
     const current = graphRef.current;
-    const width = type === CanvasNodeType.Text ? 260 : 320,
-      height = type === CanvasNodeType.Text ? 190 : 240;
+    const width =
+        type === CanvasNodeType.Text
+          ? 260
+          : type === CanvasNodeType.Group
+            ? 520
+            : 320,
+      height =
+        type === CanvasNodeType.Text
+          ? 190
+          : type === CanvasNodeType.Group
+            ? 340
+            : 240;
     let placement = position;
     if (!placement) {
       const columns = Math.max(
@@ -500,7 +602,13 @@ export function CanvasEditor({
             ? generationKind === "video"
               ? t("视频创作")
               : t("图片创作")
-            : t("素材")),
+            : type === CanvasNodeType.Image
+              ? t("图片创作")
+              : type === CanvasNodeType.Video
+                ? t("视频创作")
+                : type === CanvasNodeType.Group
+                  ? t("素材分组")
+                  : t("素材")),
       position: placement!,
       width,
       height,
@@ -510,19 +618,74 @@ export function CanvasEditor({
             content:
               type === CanvasNodeType.Text ? t("在这里记录你的创作想法…") : "",
             prompt: "",
-            ...(type === CanvasNodeType.Config ? { generationKind } : {}),
+            creationNode: true,
+            ...([
+              CanvasNodeType.Config,
+              CanvasNodeType.Image,
+              CanvasNodeType.Video,
+            ].includes(type)
+              ? {
+                  generationKind:
+                    type === CanvasNodeType.Video ? "video" : generationKind,
+                }
+              : {}),
           },
     };
     commit({ ...current, nodes: [...current.nodes, node] });
     setSelected([node.id]);
     setSelectedEdge(null);
+    setComposerNodeId(null);
+    layout.current?.focus({ preventScroll: true });
     return node;
   }
   function createGeneration(kind: "image" | "video") {
-    const node = add(CanvasNodeType.Config, undefined, undefined, kind);
-    onGenerate(node, kind);
+    add(
+      kind === "video" ? CanvasNodeType.Video : CanvasNodeType.Image,
+      undefined,
+      undefined,
+      kind,
+    );
+  }
+  function createFromMenu(type: CanvasNodeType) {
+    if (!createMenu) return;
+    const pending = createMenu;
+    const node = add(type, pending.position);
+    if (pending.connection) {
+      const fromNodeId =
+        pending.connection.handleType === "source"
+          ? pending.connection.nodeId
+          : node.id;
+      const toNodeId =
+        pending.connection.handleType === "target"
+          ? pending.connection.nodeId
+          : node.id;
+      if (
+        !validateReferenceConnection(graphRef.current, fromNodeId, toNodeId)
+      ) {
+        commit(
+          {
+            ...graphRef.current,
+            connections: [
+              ...graphRef.current.connections,
+              {
+                id: crypto.randomUUID(),
+                fromNodeId,
+                toNodeId,
+              },
+            ],
+          },
+          false,
+        );
+      }
+    }
+    setCreateMenu(null);
   }
   function startDrag(event: React.PointerEvent, node: CanvasNodeData) {
+    if (pickingReferenceFor && event.button === 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (
       event.button !== 0 ||
       (event.target as HTMLElement).closest("button,input,textarea,video")
@@ -530,6 +693,7 @@ export function CanvasEditor({
       return;
     if (tool === "pan" || event.ctrlKey || spacePressed.current) return;
     event.stopPropagation();
+    setCreateMenu(null);
     if (connection) {
       finishConnection(node.id);
       return;
@@ -553,6 +717,9 @@ export function CanvasEditor({
       moved: false,
       touch: event.pointerType === "touch",
       selection: ids,
+      selectionBefore: selected,
+      shiftKey: event.shiftKey,
+      nodeId: node.id,
     };
   }
   function group() {
@@ -634,9 +801,59 @@ export function CanvasEditor({
       },
     });
   }
-  const activeNode = graph.nodes.find((n) => n.id === selected[0]);
-  const generationInput = activeNode?.metadata?.generationTaskId
-    ? readGenerationInput(activeNode.metadata.generationInput)
+  const activeNode =
+    selected.length === 1
+      ? graph.nodes.find((n) => n.id === selected[0])
+      : undefined;
+  const composerNode =
+    activeNode?.id === composerNodeId && !pickingReferenceFor
+      ? activeNode
+      : undefined;
+  const composerWidth = Math.min(420, Math.max(0, stageSize.width - 24));
+  const composerPosition = composerNode
+    ? {
+        x: Math.max(
+          12,
+          Math.min(
+            stageSize.width - composerWidth - 12,
+            graph.viewport.x +
+              (composerNode.position.x + composerNode.width) *
+                graph.viewport.k +
+              24,
+          ),
+        ),
+        y: Math.max(
+          62,
+          Math.min(
+            Math.max(62, stageSize.height - 440),
+            graph.viewport.y + composerNode.position.y * graph.viewport.k,
+          ),
+        ),
+      }
+    : { x: 12, y: 62 };
+  const menuPosition = createMenu
+    ? {
+        x:
+          (Math.max(
+            12,
+            Math.min(
+              stageSize.width - 252,
+              graph.viewport.x + createMenu.position.x * graph.viewport.k,
+            ),
+          ) -
+            graph.viewport.x) /
+          graph.viewport.k,
+        y:
+          (Math.max(
+            12,
+            Math.min(
+              stageSize.height - (createMenu.connection ? 170 : 284),
+              graph.viewport.y + createMenu.position.y * graph.viewport.k,
+            ),
+          ) -
+            graph.viewport.y) /
+          graph.viewport.k,
+      }
     : undefined;
   const selectedMedia = selected.map((id) => {
     const node = graph.nodes.find((item) => item.id === id);
@@ -667,10 +884,6 @@ export function CanvasEditor({
     (node) => node.id === activeEdge?.fromNodeId,
   );
   const edgeTo = graph.nodes.find((node) => node.id === activeEdge?.toNodeId);
-  const activeReferences =
-    activeNode?.type === CanvasNodeType.Config
-      ? collectCanvasReferences(graph, activeNode.id)
-      : null;
   function updateNode(values: Partial<CanvasNodeData>) {
     if (!activeNode) return;
     commit({
@@ -695,7 +908,9 @@ export function CanvasEditor({
           layout.current?.focus({ preventScroll: true });
       }}
     >
-      <div className={`canvas-stage ${connection ? "canvas-connecting" : ""}`}>
+      <div
+        className={`canvas-stage ${connection ? "canvas-connecting" : ""} ${pickingReferenceFor ? "canvas-reference-picking" : ""}`}
+      >
         <InfiniteCanvas
           containerRef={container}
           viewport={graph.viewport}
@@ -705,15 +920,27 @@ export function CanvasEditor({
             onChange({ ...graphRef.current, viewport })
           }
           onCanvasDeselect={() => {
+            if (pickingReferenceFor) {
+              setPickingReferenceFor(null);
+              return;
+            }
             setSelected([]);
             setSelectedEdge(null);
+            setComposerNodeId(null);
           }}
           onGestureStart={() => {
             drag.current = null;
             setBox(null);
             cancelConnection();
+            setCreateMenu(null);
           }}
           onCanvasMouseDown={(event) => {
+            if (pickingReferenceFor) {
+              setPickingReferenceFor(null);
+              return;
+            }
+            setComposerNodeId(null);
+            setCreateMenu(null);
             if (connectionRef.current) {
               cancelConnection();
               setConnectionMessage("");
@@ -726,9 +953,10 @@ export function CanvasEditor({
               setSelectedEdge(null);
             }
           }}
-          onCanvasDoubleClick={(event) =>
-            add(CanvasNodeType.Text, world(event.clientX, event.clientY))
-          }
+          onCanvasDoubleClick={(event) => {
+            setComposerNodeId(null);
+            setCreateMenu({ position: world(event.clientX, event.clientY) });
+          }}
           onDrop={(event) => {
             event.preventDefault();
             const asset = assets.find(
@@ -787,7 +1015,7 @@ export function CanvasEditor({
               <div
                 key={node.id}
                 data-node-id={node.id}
-                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""}`}
+                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""} ${pickingReferenceFor && node.metadata?.assetId && node.id !== pickingReferenceFor ? "node-reference-pickable" : ""}`}
                 style={{
                   left: node.position.x,
                   top: node.position.y,
@@ -795,6 +1023,63 @@ export function CanvasEditor({
                   height: node.height,
                 }}
                 onPointerDown={(event) => startDrag(event, node)}
+                onClickCapture={(event) => {
+                  if (!pickingReferenceFor) {
+                    if (
+                      (event.target as Element).closest("video") &&
+                      !event.ctrlKey &&
+                      !spacePressed.current &&
+                      tool !== "pan"
+                    ) {
+                      const ids = event.shiftKey
+                        ? selected.includes(node.id)
+                          ? selected.filter((id) => id !== node.id)
+                          : [...selected, node.id]
+                        : [node.id];
+                      setSelected(ids);
+                      setSelectedEdge(null);
+                      setComposerNodeId(event.shiftKey ? null : node.id);
+                    }
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (
+                    node.id !== pickingReferenceFor &&
+                    typeof node.metadata?.assetId === "string"
+                  ) {
+                    onPickReference?.(
+                      pickingReferenceFor,
+                      node.metadata.assetId,
+                    );
+                    setPickingReferenceFor(null);
+                    setComposerNodeId(pickingReferenceFor);
+                  }
+                }}
+                tabIndex={0}
+                aria-label={node.title}
+                onKeyDown={(event) => {
+                  if (
+                    event.target !== event.currentTarget ||
+                    event.key !== "Enter"
+                  )
+                    return;
+                  event.preventDefault();
+                  if (
+                    pickingReferenceFor &&
+                    node.id !== pickingReferenceFor &&
+                    typeof node.metadata?.assetId === "string"
+                  ) {
+                    onPickReference?.(
+                      pickingReferenceFor,
+                      node.metadata.assetId,
+                    );
+                    setPickingReferenceFor(null);
+                    return;
+                  }
+                  setSelected([node.id]);
+                  setComposerNodeId(node.id);
+                }}
                 onDoubleClick={(event) => {
                   event.stopPropagation();
                   if (asset) setPreview(asset);
@@ -890,36 +1175,14 @@ export function CanvasEditor({
                       </div>
                     ) : node.type === CanvasNodeType.Text ? (
                       <p className="node-note">
-                        {node.metadata?.content || t("双击并在右侧编辑笔记")}
+                        {node.metadata?.content || t("点击并在属性栏编辑笔记")}
                       </p>
-                    ) : node.type === CanvasNodeType.Config ? (
-                      <div className="node-generation">
-                        <Icon
-                          name={
-                            node.metadata?.generationKind === "video"
-                              ? "video"
-                              : "image"
-                          }
-                          size={28}
-                        />
-                        <p>
-                          {node.metadata?.prompt || t("让一个想法，成为画面。")}
-                        </p>
-                        <button
-                          className="button secondary small"
-                          onClick={() =>
-                            onGenerate(
-                              node,
-                              node.metadata?.generationKind === "video"
-                                ? "video"
-                                : "image",
-                            )
-                          }
-                        >
-                          {t("设置并报价")}
-                          <Icon name="arrow" size={13} />
-                        </button>
-                      </div>
+                    ) : node.type === CanvasNodeType.Config ||
+                      (node.metadata?.creationNode &&
+                        [CanvasNodeType.Image, CanvasNodeType.Video].includes(
+                          node.type,
+                        )) ? (
+                      <CanvasNodePlaceholder node={node} />
                     ) : (
                       <div className="node-task-state">
                         <Icon name="image" size={26} />
@@ -953,7 +1216,7 @@ export function CanvasEditor({
                     <span className="port-caption">{t("引用")}</span>
                   </button>
                 )}
-                {node.type === CanvasNodeType.Config && (
+                {canReceiveReference(node) && (
                   <button
                     className={`node-port port-in ${connection?.nodeId === node.id ? "port-active" : ""}`}
                     style={{
@@ -989,7 +1252,140 @@ export function CanvasEditor({
               }}
             />
           )}
+          {createMenu &&
+            menuPosition &&
+            (createMenu.connection ? (
+              <ConnectionCreateMenu
+                pending={
+                  {
+                    connection: createMenu.connection,
+                    position: menuPosition,
+                  } satisfies PendingConnectionCreate
+                }
+                scale={graph.viewport.k}
+                types={
+                  createMenu.connection.handleType === "source"
+                    ? [CanvasNodeType.Image, CanvasNodeType.Video]
+                    : [CanvasNodeType.Text, CanvasNodeType.Group]
+                }
+                onCreate={createFromMenu}
+                onClose={closeCreateMenu}
+              />
+            ) : (
+              <NodeCreateMenu
+                position={menuPosition}
+                scale={graph.viewport.k}
+                types={[
+                  CanvasNodeType.Image,
+                  CanvasNodeType.Video,
+                  CanvasNodeType.Text,
+                  CanvasNodeType.Group,
+                ]}
+                onCreate={createFromMenu}
+                onClose={closeCreateMenu}
+              />
+            ))}
         </InfiniteCanvas>
+        {activeNode &&
+          ![CanvasNodeType.Text, CanvasNodeType.Group].includes(
+            activeNode.type,
+          ) &&
+          !pickingReferenceFor &&
+          !composerNode && (
+            <CanvasNodeHoverToolbar
+              node={activeNode}
+              viewport={graph.viewport}
+              bounds={stageSize}
+              asset={assets.find(
+                (asset) => asset.id === activeNode.metadata?.assetId,
+              )}
+              onEdit={() => setComposerNodeId(activeNode.id)}
+              onPreview={() => {
+                const asset = assets.find(
+                  (asset) => asset.id === activeNode.metadata?.assetId,
+                );
+                if (asset) setPreview(asset);
+              }}
+              onDuplicate={duplicate}
+              onDelete={remove}
+              onShowTask={
+                activeNode.metadata?.generationTaskId && onShowTask
+                  ? () =>
+                      onShowTask(String(activeNode.metadata!.generationTaskId))
+                  : undefined
+              }
+            />
+          )}
+        {composerNode && renderComposer && (
+          <div
+            className="canvas-node-composer-overlay"
+            data-canvas-no-zoom
+            data-composer-node-id={composerNode.id}
+            style={{
+              left: composerPosition.x,
+              top: composerPosition.y,
+              width: composerWidth,
+              maxHeight: Math.max(
+                120,
+                stageSize.height - composerPosition.y - 80,
+              ),
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          >
+            {renderComposer(composerNode, {
+              onClose: () => setComposerNodeId(null),
+              onPickReferences: () => {
+                cancelConnection();
+                setCreateMenu(null);
+                setPickingReferenceFor(composerNode.id);
+                layout.current?.focus({ preventScroll: true });
+              },
+            })}
+          </div>
+        )}
+        {pickingReferenceFor && (
+          <div
+            className="canvas-reference-picking-hint"
+            role="status"
+            data-canvas-no-zoom
+          >
+            <Icon name="cursor" size={16} />
+            <span>{t("从画布选择参考素材")}</span>
+            <button onClick={() => setPickingReferenceFor(null)}>
+              {t("返回输入框")} <kbd>Esc</kbd>
+            </button>
+          </div>
+        )}
+        {selected.length > 1 && !pickingReferenceFor && (
+          <div className="canvas-selection-actions" data-canvas-no-zoom>
+            <span>{t("已选 {0} 个节点", selected.length)}</span>
+            {onCompare && selected.length > 1 && (
+              <button
+                disabled={!canCompareSelection}
+                onClick={() => onCompare(comparisonAssets)}
+              >
+                {t("对比")}
+              </button>
+            )}
+            {selected.length > 1 && (
+              <button
+                disabled={
+                  !canGroupSelectedNodes(new Set(selected), graph.nodes)
+                }
+                onClick={group}
+              >
+                {t("分组")}
+              </button>
+            )}
+            <button onClick={duplicate} title={t("复制节点")}>
+              <Icon name="copy" size={14} />
+            </button>
+            <button onClick={remove} title={t("删除选中节点")}>
+              <Icon name="trash" size={14} />
+            </button>
+          </div>
+        )}
         <div className="canvas-reference-guide">
           <Icon name="link" size={14} />
           <span>
@@ -1024,7 +1420,7 @@ export function CanvasEditor({
                 {t("创作视频")}
               </button>
             </div>
-            <small>{t("双击添加笔记 · 滚轮缩放 · 按住空格拖动画布")}</small>
+            <small>{t("双击空白添加节点 · 滚轮缩放 · 按住空格拖动画布")}</small>
           </div>
         )}
         <div className="canvas-tool-dock">
@@ -1143,298 +1539,134 @@ export function CanvasEditor({
           </div>
         )}
       </div>
-      {activeNode && (
-        <aside className="node-inspector">
-          <div className="inspector-heading">
-            <span>{t("节点属性")}</span>
-            <button
-              className="icon-button"
-              onClick={() => setSelected([])}
-              aria-label={t("关闭属性")}
-            >
-              <Icon name="close" size={16} />
-            </button>
-          </div>
-          <label>
-            {t("名称")}
-            <input
-              value={activeNode.title}
-              onChange={(e) => updateNode({ title: e.target.value })}
-            />
-          </label>
-          {activeNode.type === CanvasNodeType.Text && (
+      {activeNode &&
+        [CanvasNodeType.Text, CanvasNodeType.Group].includes(
+          activeNode.type,
+        ) && (
+          <aside className="node-inspector">
+            <div className="inspector-heading">
+              <span>{t("节点属性")}</span>
+              <button
+                className="icon-button"
+                onClick={() => setSelected([])}
+                aria-label={t("关闭属性")}
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
             <label>
-              {t("创作笔记")}
-              <textarea
-                rows={9}
-                value={activeNode.metadata?.content || ""}
-                onChange={(e) =>
-                  updateNode({
-                    metadata: {
-                      ...activeNode.metadata,
-                      content: e.target.value,
-                    },
-                  })
-                }
+              {t("名称")}
+              <input
+                value={activeNode.title}
+                onChange={(e) => updateNode({ title: e.target.value })}
               />
             </label>
-          )}
-          {activeNode.metadata?.assetId &&
-            activeNode.type === CanvasNodeType.Image && (
-              <div className="node-creation-actions">
-                <button
-                  className="button secondary full"
-                  onClick={() => onGenerate(activeNode, "image")}
-                >
-                  <Icon name="image" size={15} />
-                  {t("编辑图片")}
-                </button>
-                <button
-                  className="button primary full"
-                  onClick={() => onGenerate(activeNode, "video")}
-                >
-                  <Icon name="video" size={15} />
-                  {t("生成视频")}
-                </button>
-              </div>
-            )}
-          {activeNode.metadata?.assetId &&
-            activeNode.type !== CanvasNodeType.Image && (
-              <button
-                className="button primary full"
-                onClick={() => onGenerate(activeNode, "video")}
-              >
-                <Icon name="video" size={15} />
-                {activeNode.type === CanvasNodeType.Video
-                  ? t("继续视频创作")
-                  : t("基于此素材创作")}
-              </button>
-            )}
-          {Boolean(activeNode.metadata?.generationTaskId) && onShowTask && (
-            <button
-              className="button secondary full"
-              onClick={() =>
-                onShowTask(String(activeNode.metadata!.generationTaskId))
-              }
-            >
-              {t("查看任务")}
-            </button>
-          )}
-          {generationInput && (
-            <section className="node-reference-summary generation-input-summary">
-              <h3>{t("本次生成输入")}</h3>
-              <p>{t("受理时保存的实际素材选择")}</p>
-              {(
-                [
-                  [t("参考素材"), generationInput.reference_asset_ids],
-                  [
-                    t("首帧"),
-                    [generationInput.start_frame_asset_id].filter(Boolean),
-                  ],
-                  [
-                    t("尾帧"),
-                    [generationInput.end_frame_asset_id].filter(Boolean),
-                  ],
-                ] satisfies [string, string[]][]
-              ).map(([label, ids]) => (
-                <div className="generation-input-row" key={label}>
-                  <strong>{label}</strong>
-                  <span>
-                    {ids.length
-                      ? ids
-                          .map(
-                            (id) =>
-                              assets.find((asset) => asset.id === id)
-                                ?.file_name || id,
-                          )
-                          .join(" · ")
-                      : t("未使用")}
-                  </span>
-                </div>
-              ))}
-            </section>
-          )}
-          {activeNode.type === CanvasNodeType.Config && (
-            <>
-              <section className="node-reference-summary">
-                <h3>
-                  <Icon name="link" size={14} />
-                  {t("已连接参考")}
-                </h3>
-                <p>
-                  {t(
-                    "{0} 个素材 · {1} 条笔记",
-                    activeReferences?.assetIds.length || 0,
-                    activeReferences?.notes.length || 0,
-                  )}
-                </p>
-                {graph.connections
-                  .filter((edge) => edge.toNodeId === activeNode.id)
-                  .map((edge) => (
-                    <div className="node-reference-row" key={edge.id}>
-                      <span>
-                        {graph.nodes.find((node) => node.id === edge.fromNodeId)
-                          ?.title || t("缺失节点")}
-                      </span>
-                      <button
-                        className="icon-button"
-                        title={t("查看引用连线")}
-                        onClick={() => {
-                          setSelectedEdge(edge.id);
-                          setSelected([]);
-                        }}
-                        aria-label={t("查看引用连线")}
-                      >
-                        <Icon name="link" size={13} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        title={t("移除引用")}
-                        onClick={() =>
-                          commit({
-                            ...graphRef.current,
-                            connections: graphRef.current.connections.filter(
-                              (item) => item.id !== edge.id,
-                            ),
-                          })
-                        }
-                        aria-label={t("移除引用")}
-                      >
-                        <Icon name="close" size={13} />
-                      </button>
-                    </div>
-                  ))}
-                {!graph.connections.some(
-                  (edge) => edge.toNodeId === activeNode.id,
-                ) && (
-                  <small>
-                    {t("从素材或笔记右侧的引用端口拖到这里的参考端口")}
-                  </small>
-                )}
-                {Boolean(activeReferences?.issues.length) && (
-                  <small className="reference-warning">
-                    {t("部分引用尚不可用，请检查空笔记、分组或未完成任务")}
-                  </small>
-                )}
-              </section>
+            {activeNode.type === CanvasNodeType.Text && (
               <label>
-                {t("生成提示词")}
+                {t("创作笔记")}
                 <textarea
-                  rows={6}
-                  value={activeNode.metadata?.prompt || ""}
+                  rows={9}
+                  value={activeNode.metadata?.content || ""}
                   onChange={(e) =>
                     updateNode({
                       metadata: {
                         ...activeNode.metadata,
-                        prompt: e.target.value,
+                        content: e.target.value,
                       },
                     })
                   }
                 />
               </label>
-              <button
-                className="button primary full"
-                onClick={() =>
-                  onGenerate(
-                    activeNode,
-                    activeNode.metadata?.generationKind === "video"
-                      ? "video"
-                      : "image",
-                  )
-                }
-              >
-                <Icon name="spark" />
-                {t("设置并报价")}
+            )}
+            <div className="inspector-dimensions">
+              <label>
+                {t("宽")}
+                <input
+                  type="number"
+                  min="120"
+                  max="2000"
+                  value={activeNode.width}
+                  onChange={(e) =>
+                    updateNode({
+                      width: Math.min(
+                        2000,
+                        Math.max(120, Number(e.target.value)),
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                {t("高")}
+                <input
+                  type="number"
+                  min="80"
+                  max="2000"
+                  value={activeNode.height}
+                  onChange={(e) =>
+                    updateNode({
+                      height: Math.min(
+                        2000,
+                        Math.max(80, Number(e.target.value)),
+                      ),
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="inspector-actions">
+              {onCompare && (
+                <button
+                  className="button secondary"
+                  disabled={!canCompareSelection}
+                  title={t("多选至少两个不同且可用的同类图片或视频素材")}
+                  onClick={() => {
+                    if (canCompareSelection) onCompare(comparisonAssets);
+                  }}
+                >
+                  {t("比较选中素材")}
+                </button>
+              )}
+              <button className="button secondary" onClick={duplicate}>
+                <Icon name="copy" size={15} />
+                {t("复制节点")}
               </button>
-            </>
-          )}
-          <div className="inspector-dimensions">
-            <label>
-              {t("宽")}
-              <input
-                type="number"
-                min="120"
-                max="2000"
-                value={activeNode.width}
-                onChange={(e) =>
-                  updateNode({
-                    width: Math.min(
-                      2000,
-                      Math.max(120, Number(e.target.value)),
-                    ),
-                  })
-                }
-              />
-            </label>
-            <label>
-              {t("高")}
-              <input
-                type="number"
-                min="80"
-                max="2000"
-                value={activeNode.height}
-                onChange={(e) =>
-                  updateNode({
-                    height: Math.min(
-                      2000,
-                      Math.max(80, Number(e.target.value)),
-                    ),
-                  })
-                }
-              />
-            </label>
-          </div>
-          <div className="inspector-actions">
-            {onCompare && (
               <button
                 className="button secondary"
-                disabled={!canCompareSelection}
-                title={t("多选至少两个不同且可用的同类图片或视频素材")}
-                onClick={() => {
-                  if (canCompareSelection) onCompare(comparisonAssets);
-                }}
+                disabled={
+                  !canGroupSelectedNodes(new Set(selected), graph.nodes)
+                }
+                onClick={group}
               >
-                {t("比较选中素材")}
+                <Icon name="group" size={15} />
+                {t("建立分组")}
               </button>
-            )}
-            <button className="button secondary" onClick={duplicate}>
-              <Icon name="copy" size={15} />
-              {t("复制节点")}
-            </button>
-            <button
-              className="button secondary"
-              disabled={!canGroupSelectedNodes(new Set(selected), graph.nodes)}
-              onClick={group}
-            >
-              <Icon name="group" size={15} />
-              {t("建立分组")}
-            </button>
-            <button
-              className="button secondary"
-              onClick={ungroup}
-              disabled={
-                !canUngroupSelectedNodes(new Set(selected), graph.nodes)
-              }
-            >
-              {t("解除分组")}
-            </button>
-            <button className="button subtle danger-text" onClick={remove}>
-              <Icon name="trash" size={15} />
-              {t("删除选中节点")}
-            </button>
-          </div>
-          <p className="inspector-note">
-            {t(
-              "节点操作只修改画布布局与引用。历史生成、作品与积分记录由任务服务保存。",
-            )}
-          </p>
-          {activeNode.type === CanvasNodeType.Group && (
+              <button
+                className="button secondary"
+                onClick={ungroup}
+                disabled={
+                  !canUngroupSelectedNodes(new Set(selected), graph.nodes)
+                }
+              >
+                {t("解除分组")}
+              </button>
+              <button className="button subtle danger-text" onClick={remove}>
+                <Icon name="trash" size={15} />
+                {t("删除选中节点")}
+              </button>
+            </div>
             <p className="inspector-note">
-              {t("分组引用会包含组内素材与笔记。删除分组框保留内部节点。")}
+              {t(
+                "节点操作只修改画布布局与引用。历史生成、作品与积分记录由任务服务保存。",
+              )}
             </p>
-          )}
-        </aside>
-      )}
+            {activeNode.type === CanvasNodeType.Group && (
+              <p className="inspector-note">
+                {t("分组引用会包含组内素材与笔记。删除分组框保留内部节点。")}
+              </p>
+            )}
+          </aside>
+        )}
       {activeEdge && edgeFrom && edgeTo && (
         <aside className="node-inspector edge-inspector">
           <div className="inspector-heading">
@@ -1453,7 +1685,8 @@ export function CanvasEditor({
             <span>{edgeTo.title}</span>
           </div>
           <p className="inspector-note">
-            {edgeTo.type === CanvasNodeType.Config
+            {canReceiveReference(edgeTo) &&
+            edgeTo.metadata?.generationSourceNodeId !== edgeFrom.id
               ? t(
                   "此连线将素材或笔记提供给创作节点。生成前仍需确认参数与报价。",
                 )
@@ -1482,17 +1715,17 @@ export function CanvasEditor({
           <div className="canvas-help-content">
             <p>
               {t(
-                "从工具栏选择图片或视频开始创作，生成结果会保留来源连线，可继续用作下一次创作的参考。",
+                "从工具栏或双击空白创建图片、视频节点，点击节点输入提示词和参数。生成结果保留来源连线，可继续作为参考。",
               )}
             </p>
             <p>
               {t(
-                "把素材、笔记或分组右侧的引用端口，拖到创作节点左侧的参考端口。也可以依次点击两端，触屏与键盘均可使用。",
+                "把素材、笔记或分组右侧的引用端口，拖到创作节点左侧的参考端口；拖到空白可续建节点。也可以依次点击两端连接。",
               )}
             </p>
             <p>
               {t(
-                "素材默认加入生成参考；笔记自动加入提示词，可在生成窗口调整。连线不会自动生成或扣费。",
+                "在节点创作面板中添加素材、指定首尾帧并确认报价。点击空白收起，重新点击节点继续编辑。连线不会自动生成或扣费。",
               )}
             </p>
             <dl>

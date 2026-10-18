@@ -363,12 +363,12 @@ func graphReferences(raw json.RawMessage) (map[string]string, error) {
 		switch value := value.(type) {
 		case map[string]any:
 			for key, child := range value {
-				if key == "asset_id" || key == "assetId" || key == "selected_image_id" || key == "selected_video_id" || strings.HasSuffix(key, "_asset_id") {
+				if key == "asset_id" || key == "assetId" || key == "startFrameId" || key == "endFrameId" || key == "selected_image_id" || key == "selected_video_id" || strings.HasSuffix(key, "_asset_id") {
 					if id, ok := child.(string); ok && id != "" {
 						ids[id] = ""
 					}
 				}
-				if key == "asset_ids" || strings.HasSuffix(key, "_asset_ids") || key == "image_candidate_ids" || key == "video_candidate_ids" {
+				if key == "asset_ids" || key == "referenceIds" || key == "connectedAssetIds" || key == "generationInputSourceAssetIds" || strings.HasSuffix(key, "_asset_ids") || key == "image_candidate_ids" || key == "video_candidate_ids" {
 					if list, ok := child.([]any); ok {
 						for _, item := range list {
 							if id, ok := item.(string); ok && id != "" {

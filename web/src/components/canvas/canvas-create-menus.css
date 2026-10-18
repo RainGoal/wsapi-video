@@ -1,0 +1,83 @@
+.canvas-create-menu {
+  position: absolute;
+  z-index: 120;
+  width: 240px;
+  max-height: min(70vh, 380px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--line, #41433f);
+  border-radius: 16px;
+  background: var(--panel, #fff);
+  color: var(--text, #252525);
+  box-shadow: 0 12px 40px #17171724;
+  backdrop-filter: blur(16px);
+}
+.canvas-create-menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 6px;
+  color: var(--muted, #777);
+  font-size: 12px;
+}
+.canvas-create-menu-heading button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.canvas-create-options {
+  display: grid;
+  gap: 2px;
+}
+.canvas-create-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.canvas-create-option:hover,
+.canvas-create-option:focus-visible,
+.canvas-create-menu-heading button:hover {
+  background: var(--panel-light, #282a2c);
+}
+.canvas-create-option:focus-visible {
+  outline: 2px solid var(--accent, #bda57a);
+}
+.canvas-create-option-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--panel-light, #282a2c);
+  color: var(--muted, #777);
+}
+.canvas-create-option-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.canvas-create-option-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.canvas-create-option-copy small {
+  color: var(--muted, #777);
+  font-size: 10px;
+}

@@ -1,6 +1,10 @@
 import type { Task } from "./types";
 
-export type PendingSubmission = { quote_id: string; request_key: string };
+export type PendingSubmission = {
+  quote_id: string;
+  request_key: string;
+  source_node_id?: string;
+};
 type RecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export const submissionRecoveryKey = (userID: string, projectID: string) =>
   `frame:submission:${userID}:${projectID}`;
@@ -14,10 +18,18 @@ function parseSubmission(value: unknown): PendingSubmission {
     entry.quote_id.length > 128 ||
     typeof entry.request_key !== "string" ||
     entry.request_key.length < 8 ||
-    entry.request_key.length > 128
+    entry.request_key.length > 128 ||
+    (entry.source_node_id !== undefined &&
+      (typeof entry.source_node_id !== "string" ||
+        !entry.source_node_id ||
+        entry.source_node_id.length > 128))
   )
     throw new Error("Invalid pending submission record");
-  return { quote_id: entry.quote_id, request_key: entry.request_key };
+  return {
+    quote_id: entry.quote_id,
+    request_key: entry.request_key,
+    ...(entry.source_node_id ? { source_node_id: entry.source_node_id } : {}),
+  };
 }
 
 export function readPendingSubmission(storage: RecoveryStorage, key: string) {
@@ -26,7 +38,9 @@ export function readPendingSubmission(storage: RecoveryStorage, key: string) {
 }
 
 const sameSubmission = (a: PendingSubmission, b: PendingSubmission) =>
-  a.quote_id === b.quote_id && a.request_key === b.request_key;
+  a.quote_id === b.quote_id &&
+  a.request_key === b.request_key &&
+  a.source_node_id === b.source_node_id;
 
 // All mutations must run under the same Web Lock in every tab.
 export async function withSubmissionRecoveryLock(
@@ -65,6 +79,22 @@ export function clearPendingSubmission(
   storage.removeItem(key);
   if (storage.getItem(key) !== null)
     throw new Error("Pending submission record was not cleared");
+}
+
+// Run under the recovery Web Lock. Deliver before cleanup so closing an editor
+// cannot discard the only record of an accepted task. Canvas delivery is idempotent.
+export function completePendingSubmission(
+  storage: RecoveryStorage,
+  key: string,
+  entry: PendingSubmission,
+  deliver: () => boolean | void,
+) {
+  const previous = readPendingSubmission(storage, key);
+  if (previous && !sameSubmission(previous, entry))
+    throw new Error("Cannot complete another pending submission");
+  if (deliver() === false) return false;
+  clearPendingSubmission(storage, key, entry);
+  return true;
 }
 
 export const submissionWasRejected = (

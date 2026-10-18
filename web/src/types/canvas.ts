@@ -8,6 +8,22 @@ export enum CanvasNodeType {
   Audio = "audio",
   Group = "group",
 }
+export type GenerationDraft = {
+  kind: "image" | "video";
+  productId: string;
+  prompt: string;
+  ratio: string;
+  duration: number;
+  resolution: string;
+  size: string;
+  quality: string;
+  audio: boolean;
+  referenceIds: string[];
+  startFrameId: string;
+  endFrameId: string;
+  // Baseline for merging later canvas connections without restoring removed references.
+  connectedAssetIds: string[];
+};
 export type CanvasNodeData = {
   id: string;
   type: CanvasNodeType;
@@ -22,6 +38,7 @@ export type CanvasNodeData = {
     assetId?: string;
     shotId?: string;
     productId?: string;
+    generationDraft?: GenerationDraft;
     [key: string]: unknown;
   };
 };

@@ -283,8 +283,15 @@ func TestFoundationPostgresIntegration(t *testing.T) {
 	t.Run("private assets and durable references", func(t *testing.T) {
 		second.request("GET", "/assets/"+asset.ID, nil, 404)
 		second.request("GET", "/assets/"+asset.ID+"/download", nil, 404)
+		for _, field := range []string{"referenceIds", "connectedAssetIds", "startFrameId", "endFrameId"} {
+			var reference any = asset.ID
+			if field == "referenceIds" || field == "connectedAssetIds" {
+				reference = []string{asset.ID}
+			}
+			second.request("PUT", "/projects/"+otherProject+"/canvas", map[string]any{"graph_schema_version": 1, "revision": 0, "graph": map[string]any{"nodes": []any{map[string]any{"id": "n", "metadata": map[string]any{"generationDraft": map[string]any{field: reference}}}}, "edges": []any{}}}, 422)
+		}
 		second.request("PUT", "/projects/"+otherProject+"/canvas", map[string]any{"graph_schema_version": 1, "revision": 0, "graph": map[string]any{"nodes": []any{map[string]any{"id": "n", "asset_id": asset.ID}}, "edges": []any{}}}, 422)
-		first.request("PUT", "/projects/"+projectID+"/canvas", map[string]any{"graph_schema_version": 1, "revision": 2, "graph": map[string]any{"nodes": []any{map[string]any{"id": "n", "data": map[string]any{"asset_id": asset.ID}}}, "edges": []any{}}}, 200)
+		first.request("PUT", "/projects/"+projectID+"/canvas", map[string]any{"graph_schema_version": 1, "revision": 2, "graph": map[string]any{"nodes": []any{map[string]any{"id": "n", "metadata": map[string]any{"generationDraft": map[string]any{"referenceIds": []string{asset.ID}}}}}, "edges": []any{}}}, 200)
 		first.request("DELETE", "/assets/"+asset.ID, map[string]any{}, 409)
 		response, err := first.client.Get(f.server.URL + asset.PreviewURL)
 		if err != nil {

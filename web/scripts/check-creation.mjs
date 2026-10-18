@@ -110,23 +110,25 @@ test("recovering an old task retains historical provenance without a storyboard 
   assert.equal(unassociated.nodes.at(-1).metadata.shotId, undefined);
 });
 
-test("starting from an asset creates an editable concept between reference and output", () => {
+test("starting from a media node reuses it and keeps the result independent", () => {
   const initial = graph();
   initial.nodes[0] = {
     ...initial.nodes[0],
     type: "image",
-    metadata: { assetId: "input-asset" },
+    metadata: { assetId: "input-asset", prompt: "Original media prompt" },
   };
   const next = addAcceptedTask(initial, task, "Concept", "source");
   assert.deepEqual(
     next.nodes.map((node) => node.type),
-    ["image", "config", "image"],
+    ["image", "image"],
   );
   assert.equal(next.connections[0].fromNodeId, "source");
   assert.equal(next.connections[0].toNodeId, next.nodes[1].id);
-  assert.equal(next.connections[1].fromNodeId, next.nodes[1].id);
   assert.equal(next.nodes[1].metadata.prompt, task.prompt);
-  assert.equal(next.nodes[1].metadata.generationKind, "image");
+  assert.equal(next.nodes[0].metadata.prompt, "Original media prompt");
+  assert.equal(next.nodes[0].metadata.assetId, "input-asset");
+  assert.equal(next.nodes[0].metadata.generationKind, "image");
+  assert.equal(next.nodes[1].metadata.generationSourceNodeId, "source");
 });
 
 test("canvas creation initializes mode, connected notes and unique asset references", () => {

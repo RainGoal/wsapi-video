@@ -19,7 +19,14 @@ export function canOutputReference(node: CanvasNodeData): boolean {
   );
 }
 
-/** Connections represent references. A config's generated outputs are separate asset nodes. */
+export function canReceiveReference(node: CanvasNodeData): boolean {
+  return (
+    ["config", "image", "video"].includes(node.type) &&
+    (!node.metadata?.generationTaskId || Boolean(node.metadata.assetId))
+  );
+}
+
+/** Media and config nodes receive references; accepted outputs retain separate provenance. */
 export function validateReferenceConnection(
   graph: Graph,
   fromNodeId: string,
@@ -29,7 +36,7 @@ export function validateReferenceConnection(
   const from = graph.nodes.find((node) => node.id === fromNodeId);
   const to = graph.nodes.find((node) => node.id === toNodeId);
   if (!from || !canOutputReference(from)) return "source";
-  if (!to || to.type !== "config") return "target";
+  if (!to || !canReceiveReference(to)) return "target";
   if (
     graph.connections.some(
       (edge) => edge.fromNodeId === fromNodeId && edge.toNodeId === toNodeId,
@@ -39,13 +46,14 @@ export function validateReferenceConnection(
   return null;
 }
 
-/** Expand only directly connected reference nodes; never execute or follow config provenance. */
+/** Expand direct inputs, without following the accepted result's provenance edge. */
 export function collectCanvasReferences(graph: Graph, nodeId: string) {
   const assetIds = new Set<string>();
   const notes: { nodeId: string; title: string; content: string }[] = [];
   const issues: CanvasReferenceIssue[] = [];
   const visited = new Set<string>();
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const sourceNodeId = nodes.get(nodeId)?.metadata?.generationSourceNodeId;
   function visit(id: string) {
     if (visited.has(id)) return;
     visited.add(id);
@@ -72,7 +80,12 @@ export function collectCanvasReferences(graph: Graph, nodeId: string) {
     else issue("unsupported-node");
   }
   graph.connections
-    .filter((edge) => edge.toNodeId === nodeId)
+    .filter(
+      (edge) =>
+        edge.toNodeId === nodeId &&
+        edge.fromNodeId !== sourceNodeId &&
+        nodes.get(edge.fromNodeId)?.type !== "config",
+    )
     .forEach((edge) => visit(edge.fromNodeId));
   return { assetIds: [...assetIds], notes, issues };
 }

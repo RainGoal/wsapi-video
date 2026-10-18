@@ -22,6 +22,7 @@ const {
   collectCanvasReferences,
   validateReferenceConnection,
   canOutputReference,
+  canReceiveReference,
 } = await load("canvas-references");
 const { duplicateCanvasSelection, removeCanvasSelection } =
   await load("canvas-editing");
@@ -105,14 +106,25 @@ test("damaged and unfinished references report issues and group cycles terminate
   ]);
 });
 
-test("manual connections accept only ready references to config inputs", () => {
+test("manual connections accept ready references to media and config inputs", () => {
   const value = graph([
     node("asset", "image", { assetId: "a" }),
     node("config", "config"),
     node("other", "config"),
     node("pending", "video", { generationTaskId: "task" }),
+    node("image-creator", "image", { creationNode: true }),
+    node("video-creator", "video", { creationNode: true }),
   ]);
   assert.equal(validateReferenceConnection(value, "asset", "config"), null);
+  assert.equal(
+    validateReferenceConnection(value, "asset", "image-creator"),
+    null,
+  );
+  assert.equal(
+    validateReferenceConnection(value, "asset", "video-creator"),
+    null,
+  );
+  assert.equal(canReceiveReference(node("audio", "audio")), false);
   assert.equal(validateReferenceConnection(value, "config", "config"), "self");
   assert.equal(validateReferenceConnection(value, "config", "other"), "source");
   assert.equal(
@@ -135,6 +147,51 @@ test("manual connections accept only ready references to config inputs", () => {
     ),
     true,
   );
+});
+
+test("media results do not inherit provenance as a new reference input", () => {
+  const value = graph(
+    [
+      node("original", "image", { assetId: "original-asset" }),
+      node("new-input", "image", { assetId: "new-asset" }),
+      node("result", "image", {
+        assetId: "result-asset",
+        generationSourceNodeId: "original",
+      }),
+    ],
+    [edge("original", "result"), edge("new-input", "result")],
+  );
+  assert.deepEqual(collectCanvasReferences(value, "result"), {
+    assetIds: ["new-asset"],
+    notes: [],
+    issues: [],
+  });
+});
+
+test("copied media chains retain remapped provenance and independent drafts", () => {
+  const value = graph(
+    [
+      node("source", "image", { assetId: "source-asset" }),
+      node("result", "image", {
+        assetId: "result-asset",
+        generationSourceNodeId: "source",
+        generationDraft: { referenceIds: ["draft-asset"] },
+      }),
+    ],
+    [edge("source", "result")],
+  );
+  const copied = duplicateCanvasSelection(value, ["source", "result"]);
+  const [sourceId, resultId] = copied.selected;
+  const result = copied.graph.nodes.find((item) => item.id === resultId);
+  assert.equal(result.metadata.generationSourceNodeId, sourceId);
+  assert.deepEqual(
+    collectCanvasReferences(copied.graph, resultId).assetIds,
+    [],
+  );
+  result.metadata.generationDraft.referenceIds.push("changed");
+  assert.deepEqual(value.nodes[1].metadata.generationDraft.referenceIds, [
+    "draft-asset",
+  ]);
 });
 
 test("duplicating a group retains its member references without altering originals", () => {

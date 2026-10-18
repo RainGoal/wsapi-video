@@ -39,6 +39,56 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  收起创作面板: "Close composer",
+  从画布选择参考素材: "Pick a reference from the canvas",
+  返回输入框: "Back to composer",
+  "已选 {0} 个节点": "{0} nodes selected",
+  对比: "Compare",
+  分组: "Group",
+  "双击空白添加节点 · 滚轮缩放 · 按住空格拖动画布":
+    "Double-click the canvas to add nodes · Scroll to zoom · Hold Space to pan",
+  引用该节点生成: "Create using this node",
+  添加参考节点: "Add a reference node",
+  添加节点: "Add node",
+  关闭菜单: "Close menu",
+  创作配置: "Generation settings",
+  文字笔记: "Text note",
+  创建后点击节点开始创作: "Click the new node to start creating",
+  "记录想法，也可作为提示词参考":
+    "Capture an idea or use it as a prompt reference",
+  编辑创作: "Open composer",
+  空视频节点: "Empty video node",
+  空图片节点: "Empty image node",
+  "点击节点，输入提示词或添加参考素材":
+    "Click to enter a prompt or add references",
+  暂无可用模型: "No models available",
+  生成参数: "Generation parameters",
+  参数: "Parameters",
+  "已选择 {0} 项": "{0} selected",
+  可选: "Optional",
+  "移除参考素材 {0}": "Remove reference {0}",
+  "参考角色 {0}": "Reference role for {0}",
+  添加参考素材: "Add references",
+  "图片、视频与创作灵感": "Images, videos and inspiration",
+  从画布选择: "Pick from canvas",
+  参考角色: "Reference role",
+  普通参考: "Reference",
+  搜索项目素材: "Search project assets",
+  没有符合当前类型的素材: "No assets match this reference type",
+  "首尾帧素材已不可用，请重新选择图片。":
+    "A frame image is unavailable. Choose another image.",
+  "该提交来自另一个节点，恢复后会归回原节点。":
+    "This submission belongs to another node. Recovery will attach it to that node.",
+  "{0} 秒": "{0} s",
+  确认生成: "Confirm generation",
+  获取报价: "Get quote",
+  点击并在属性栏编辑笔记: "Click to edit this note in the inspector",
+  "从工具栏或双击空白创建图片、视频节点，点击节点输入提示词和参数。生成结果保留来源连线，可继续作为参考。":
+    "Create image or video nodes from the toolbar or by double-clicking the canvas. Click a node to enter its prompt and parameters. Results keep their source connections and can be reused as references.",
+  "把素材、笔记或分组右侧的引用端口，拖到创作节点左侧的参考端口；拖到空白可续建节点。也可以依次点击两端连接。":
+    "Drag the reference port on an asset, note or group to a creation node's input. Drop it on empty canvas to create a connected node. You can also click both ports in sequence.",
+  "在节点创作面板中添加素材、指定首尾帧并确认报价。点击空白收起，重新点击节点继续编辑。连线不会自动生成或扣费。":
+    "Add references, choose frame roles and confirm a quote in the node composer. Click the canvas to close it and click the node to resume. Connections never trigger generation or charges.",
   "生成已完成，但图片下载来源未获许可，请管理员配置结果下载来源白名单后重试保存":
     "Generation completed, but the image download source is not allowed. Ask an administrator to update Allowed output origins, then retry saving the result.",
   "私有存储尚未配置，请管理员在系统设置中完成私有存储配置后重试":

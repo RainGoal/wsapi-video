@@ -38,10 +38,18 @@ assert.ok(
 );
 const used = new Set(),
   missing = new Set();
-for (const name of fs
-  .readdirSync(root)
-  .filter((name) => /\.(tsx?|ts)$/.test(name) && name !== "i18n.ts")) {
-  const source = parse(path.join(root, name));
+function sourceFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    return entry.isDirectory()
+      ? sourceFiles(file)
+      : /\.tsx?$/.test(entry.name) && entry.name !== "i18n.ts"
+        ? [file]
+        : [];
+  });
+}
+for (const file of sourceFiles(root)) {
+  const source = parse(file);
   function visit(node) {
     if (
       ts.isCallExpression(node) &&

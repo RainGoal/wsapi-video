@@ -15,6 +15,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const {
   clearPendingSubmission,
+  completePendingSubmission,
   persistPendingSubmission,
   readPendingSubmission,
   submissionHasValidTask,
@@ -78,12 +79,32 @@ test("an outstanding request cannot be replaced or cleared by another dialog", (
   }
 });
 
+test("a pending canvas submission keeps its original node across other node editors", () => {
+  const storage = memoryStorage();
+  const originating = { ...entry, source_node_id: "canvas-node-original" };
+  persistPendingSubmission(storage, key, originating);
+  assert.deepEqual(readPendingSubmission(storage, key), originating);
+  assert.throws(() =>
+    persistPendingSubmission(storage, key, {
+      ...originating,
+      source_node_id: "canvas-node-current",
+    }),
+  );
+  assert.throws(() => clearPendingSubmission(storage, key, entry));
+  assert.deepEqual(readPendingSubmission(storage, key), originating);
+  clearPendingSubmission(storage, key, originating);
+  assert.equal(readPendingSubmission(storage, key), null);
+});
+
 test("corrupt recovery is retained and prevents overwriting it with a new request", () => {
   for (const raw of [
     "broken-json",
     "null",
     "[]",
     JSON.stringify({ ...entry, request_key: "short" }),
+    JSON.stringify({ ...entry, source_node_id: 123 }),
+    JSON.stringify({ ...entry, source_node_id: "" }),
+    JSON.stringify({ ...entry, source_node_id: "x".repeat(129) }),
   ]) {
     const storage = memoryStorage();
     storage.setItem(key, raw);
@@ -221,6 +242,41 @@ test("cleanup failure retains the request until local storage can be safely clea
   assert.deepEqual(readPendingSubmission(storage, key), entry);
   clearPendingSubmission(storage, key, entry);
   assert.equal(readPendingSubmission(storage, key), null);
+});
+
+test("accepted tasks are delivered under the recovery lock before their record is removed", async () => {
+  const storage = memoryStorage();
+  const pending = { ...entry, source_node_id: "original-canvas-node" };
+  persistPendingSubmission(storage, key, pending);
+  let receivedNode;
+  await withSubmissionRecoveryLock(queuedLocks(), key, () => {
+    assert.equal(
+      completePendingSubmission(storage, key, pending, () => {
+        assert.deepEqual(readPendingSubmission(storage, key), pending);
+        receivedNode = pending.source_node_id;
+        return true;
+      }),
+      true,
+    );
+  });
+  assert.equal(receivedNode, "original-canvas-node");
+  assert.equal(readPendingSubmission(storage, key), null);
+});
+
+test("leaving the project or failing task delivery keeps the accepted submission recoverable", () => {
+  const storage = memoryStorage();
+  persistPendingSubmission(storage, key, entry);
+  assert.equal(
+    completePendingSubmission(storage, key, entry, () => false),
+    false,
+  );
+  assert.deepEqual(readPendingSubmission(storage, key), entry);
+  assert.throws(() =>
+    completePendingSubmission(storage, key, entry, () => {
+      throw new Error("workspace unavailable");
+    }),
+  );
+  assert.deepEqual(readPendingSubmission(storage, key), entry);
 });
 
 function queuedLocks() {
