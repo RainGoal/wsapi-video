@@ -91,7 +91,7 @@ docker compose --env-file deploy/.env.production up -d --no-deps --force-recreat
 
 升级前备份数据库、私有对象、部署配置和对应 `APP_SECRET`，记录上一镜像 ID/digest。保持 `COMPOSE_PROJECT_NAME` 与数据库卷名称，使用新版本镜像重建应用；已有事务迁移不可编辑，失败先保留卷与日志，回退前确认旧应用兼容已应用 schema。不要通过删卷或重建空库修复升级问题。
 
-在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为目标 `sha-<完整提交 SHA>` 或 digest；要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
+在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为完整镜像引用：`ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`，或 `ghcr.io/raingoal/wsapi-video@sha256:<digest>`。要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
 
 ```sh
 docker compose --env-file deploy/.env.production pull app
