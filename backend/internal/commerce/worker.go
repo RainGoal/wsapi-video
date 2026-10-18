@@ -359,11 +359,17 @@ func (s *Service) archive(ctx context.Context, t Task) {
 		fileName = t.ID + imageExtension(contentType)
 	}
 	if err != nil {
+		retryMessage := "生成已完成，作品保存稍后重试，不会重新生成"
+		reviewMessage := "生成已完成，作品暂无法取回，等待人工核查"
+		if errors.Is(err, media.ErrOutputOriginDenied) {
+			retryMessage = "生成已完成，但图片下载来源未获许可，请管理员配置结果下载来源白名单后重试保存"
+			reviewMessage = retryMessage
+		}
 		if time.Since(t.CreatedAt) > s.reviewAfter() {
-			s.holdReview(ctx, t, "archive_review", "生成已完成，作品暂无法取回，等待人工核查")
+			s.holdReview(ctx, t, "archive_review", reviewMessage)
 			return
 		}
-		s.retry(ctx, t, "archive_retry", "生成已完成，作品保存稍后重试，不会重新生成", true)
+		s.retry(ctx, t, "archive_retry", retryMessage, true)
 		return
 	}
 	defer body.Close()

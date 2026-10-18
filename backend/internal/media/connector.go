@@ -16,6 +16,7 @@ import (
 )
 
 var ErrUnavailable = errors.New("media gateway is not configured")
+var ErrOutputOriginDenied = errors.New("untrusted gateway image output origin")
 
 // UnknownSubmission must never be retried as a new upstream create request.
 type UnknownSubmission struct{}
@@ -318,8 +319,11 @@ func (c *Connector) OpenImage(ctx context.Context, out Output) (io.ReadCloser, s
 		return io.NopCloser(bytes.NewReader(b)), http.DetectContentType(b), nil
 	}
 	u, err := url.Parse(out.URL)
-	if err != nil || u.User != nil || u.Fragment != "" || !c.outputs[u.Scheme+"://"+u.Host] {
-		return nil, "", errors.New("untrusted gateway image output origin")
+	if err != nil || u.User != nil || u.Fragment != "" {
+		return nil, "", errors.New("invalid image output URL")
+	}
+	if !c.outputs[u.Scheme+"://"+u.Host] {
+		return nil, "", ErrOutputOriginDenied
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

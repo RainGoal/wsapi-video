@@ -39,6 +39,8 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  "生成已完成，但图片下载来源未获许可，请管理员配置结果下载来源白名单后重试保存":
+    "Generation completed, but the image download source is not allowed. Ask an administrator to update Allowed output origins, then retry saving the result.",
   "私有存储尚未配置，请管理员在系统设置中完成私有存储配置后重试":
     "Private storage is not configured. Ask an administrator to configure private storage in System settings, then try again.",
   "{0} 积分/秒 × {1} 秒": "{0} credits/second × {1} seconds",

@@ -194,6 +194,15 @@ func (s *Service) Gateway(ctx context.Context, ref string) (*media.Connector, er
 		return nil, ErrStorageUnavailable
 	}
 	c := s.Config(st)
+	if ref != "" {
+		// Download permission follows the current administrator policy, while
+		// the accepted task retains its original gateway origin and credential.
+		current, err := s.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c.MediaOutputOrigins = current.Settings.Media.OutputOrigins
+	}
 	return media.NewConnector(media.Config{Origin: c.Sub2APIOrigin, Keys: c.MediaKeys, ImageCredential: c.ImageCredential, VideoCredential: c.VideoCredential, OutputOrigins: c.MediaOutputOrigins, MaxMediaBytes: c.MaxMediaBytes})
 }
 func (s *Service) View(ctx context.Context) (View, error) {

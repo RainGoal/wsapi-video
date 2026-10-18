@@ -23,6 +23,8 @@
 
 保存原子生效并记录只含变更字段名称的管理员审计。过期 revision 返回 HTTP 409 `{code:"settings_conflict",message:"..."}`。字段验证返回 HTTP 422 `{code:"invalid_settings",message:"...",data:{fields:{"media.origin":"必须使用固定 HTTPS Origin"}}}`。存储已有资产后不允许切换 driver/endpoint/bucket/region；同位置凭证可以轮换。已有媒体任务和支付订单保留原配置快照，不会改用新商户/网关或密钥。
 
+图片结果下载的 `media.output_origins` 使用当前管理员配置，独立于原任务的网关地址和 Key 快照。补充允许域名可使旧任务重试保存；撤销域名会使后续下载重试拒绝访问该外部域名。原任务网关 Origin 仍按既有规则隐式允许；域名修改不取消已发出的下载、不替换历史凭证，也不会重新生成。仅接受精确 HTTPS Origin，不允许通配符，图片下载不携带网关 Bearer。
+
 站点政策为 `site.retention_policy`（素材保留期限）、`site.storage_quota_policy`（容量说明）、`site.cleanup_policy`（清理规则）、`site.submission_recovery_policy`（提交未知与长期冻结处理期限）、`site.refund_policy`（退款及迟到成品政策）。各项为最多 2000 个 Unicode 码点的纯文本，保存时裁去首尾空白；默认空，旧配置缺字段时也按空处理。不替运营预设天数、额度或资金承诺。政策内容是对外声明，不能用配置文字代替配额、定时清理、自动退款或具体人工处置的执行证据。
 
 `POST /api/v1/admin/settings/test/{media|payment|smtp|storage}` 接收 `{}`，只检测已保存配置。返回 HTTP 200 `{ok:boolean,message:string,checked_at:string,scope:string}`。媒体只读查询模型列表；支付只检测 HTTPS 接入，不创建订单、不声称验签已联调；SMTP 连接、TLS、认证后 QUIT，不发送邮件；存储 HeadBucket，不写入/删除对象。错误信息经过脱敏，不输出 URL 查询、供应商响应体或凭证。测试结果不是正式模型/支付/存储权限的完整验收证明。
