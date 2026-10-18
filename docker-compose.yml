@@ -1,0 +1,77 @@
+# Production: copy deploy/.env.production.example to deploy/.env.production.
+# Start from the repository root with:
+# docker compose --env-file deploy/.env.production pull
+# docker compose --env-file deploy/.env.production up -d
+# This entry point pulls the published image; deploy/compose.yaml builds source.
+services:
+  database:
+    image: postgres:16.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_DB: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong database password}
+    volumes:
+      - studio-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, studio, -d, studio]
+      interval: 5s
+      timeout: 3s
+      start_period: 20s
+      retries: 12
+  app:
+    image: ${FRAME_IMAGE:-ghcr.io/raingoal/wsapi-video:latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      APP_ENV: production
+      APP_SETUP_MODE: "true"
+      DEMO_MODE: "false"
+      PUBLIC_URL: ${PUBLIC_URL:?Set the public HTTPS origin in deploy/.env.production}
+      DATABASE_URL: postgres://studio:${POSTGRES_PASSWORD:?Set a random hexadecimal database password}@database:5432/studio?sslmode=disable
+      APP_SECRET: ${APP_SECRET:?Set a fixed random main key of at least 32 characters}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      LISTEN_ADDR: 0.0.0.0:8090
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      WEB_DIR: /app/web
+      FFPROBE_PATH: /usr/bin/ffprobe
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      MAX_UPLOAD_MIB: ${MAX_UPLOAD_MIB:-256}
+      MAX_MEDIA_MIB: ${MAX_MEDIA_MIB:-512}
+    ports:
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          curl,
+          --fail,
+          --silent,
+          --show-error,
+          --max-time,
+          "3",
+          "http://127.0.0.1:8090/healthz",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 75s
+      retries: 3
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  studio-db:

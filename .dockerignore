@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+.runtime
+**/.runtime
+data
+tools
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+backend/bin
+output
+*.log

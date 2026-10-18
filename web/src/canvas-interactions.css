@@ -1,0 +1,391 @@
+.canvas-layout:focus {
+  outline: none;
+}
+.canvas-layout .canvas-tool-dock {
+  max-width: calc(100% - 24px);
+}
+.canvas-tool-dock .canvas-create-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #69563c;
+  border-radius: 5px;
+  background: #362e22;
+  color: #e0c59e;
+  font-size: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.canvas-tool-dock .canvas-create-button:hover {
+  background: #4a3b28;
+  border-color: #a78656;
+  color: #f1d7af;
+}
+.node-generation-kind {
+  flex-shrink: 0;
+  padding: 3px 5px;
+  border: 1px solid #685d48;
+  border-radius: 3px;
+  color: #d5bc92;
+  font-size: 9px;
+  font-weight: 400;
+}
+.node-creation-actions {
+  display: grid;
+  gap: 8px;
+}
+.canvas-layout .canvas-node {
+  cursor: grab;
+}
+.canvas-layout .canvas-node:active {
+  cursor: grabbing;
+}
+.canvas-layout .node-port {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #bb965d;
+  background: #292620;
+  color: #ead0a4;
+  cursor: crosshair;
+  z-index: 3;
+  touch-action: none;
+  box-shadow: 0 0 0 4px #141617;
+}
+.canvas-layout .port-out {
+  right: -15px;
+}
+.canvas-layout .port-in {
+  left: -15px;
+}
+.canvas-layout .node-port::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+}
+.canvas-layout .port-in {
+  background: #222d2a;
+  border-color: #88a798;
+  color: #c7ded1;
+}
+.canvas-layout .node-port:hover,
+.canvas-layout .node-port:focus-visible,
+.canvas-layout .node-port.port-active {
+  background: #d7ab6a;
+  border-color: #f0d3a8;
+  color: #171716;
+  outline: 2px solid #d7ab6a55;
+  outline-offset: 4px;
+}
+.port-caption {
+  position: absolute;
+  top: -20px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  padding: 2px 5px;
+  line-height: 1.4;
+  border-radius: 3px;
+  color: #d9c4a5;
+  background: #1a1d1ded;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.canvas-layout .node-reference-target {
+  border-color: #d7ab6a;
+  box-shadow:
+    0 0 0 3px #d7ab6a44,
+    0 8px 24px #0004;
+}
+.canvas-connecting .canvas-node {
+  cursor: crosshair;
+}
+.canvas-edges [role="button"]:focus-visible {
+  outline: none;
+  stroke: #d7ab6a55;
+}
+.canvas-reference-guide {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 8px 5px 11px;
+  border: 1px solid #43433a;
+  border-radius: 6px;
+  background: #1c1e20ed;
+  color: #b9b8a9;
+  font-size: 10px;
+  z-index: 2;
+}
+.canvas-reference-guide > svg {
+  color: #d7ab6a;
+}
+.canvas-reference-guide b {
+  color: #d7ab6a;
+  margin: 0 6px;
+}
+.canvas-reference-guide button {
+  display: flex;
+  padding: 3px;
+  color: #bdb6a6;
+}
+.canvas-layout .connection-hint {
+  top: 57px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  max-width: calc(100% - 28px);
+  width: max-content;
+  white-space: normal;
+  background: #332a1c;
+  border-color: #846941;
+  color: #ecd3ac;
+  z-index: 4;
+}
+.canvas-layout .connection-hint button {
+  margin: 0;
+  white-space: nowrap;
+}
+.connection-hint kbd {
+  margin-left: 5px;
+  font: 9px monospace;
+  opacity: 0.65;
+}
+.canvas-connection-status {
+  position: absolute;
+  left: 50%;
+  bottom: 81px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  width: max-content;
+  padding: 10px 12px;
+  border: 1px solid #63573e;
+  border-radius: 6px;
+  color: #e4d1ae;
+  background: #24251ff5;
+  box-shadow: 0 6px 20px #0005;
+  z-index: 4;
+  font-size: 11px;
+}
+.canvas-connection-status button {
+  display: flex;
+  color: #c0b699;
+}
+.node-reference-summary {
+  padding: 12px;
+  border: 1px solid #46473c;
+  border-radius: 6px;
+  background: #22251f;
+}
+.asset-visual-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-height: 90px;
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #c9ccbf;
+}
+.asset-visual-error small {
+  color: #9faf8a;
+  font-size: 10px;
+}
+.generation-input-row {
+  display: grid;
+  gap: 5px;
+  padding: 9px 0;
+  border-top: 1px solid #3a4233;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  color: #c9ccbf;
+}
+.generation-input-row strong {
+  color: #a7b29a;
+  font-weight: 500;
+}
+.node-reference-summary h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 9px;
+  font-size: 11px;
+  color: #d6ccb4;
+  font-weight: 500;
+}
+.node-reference-summary > p {
+  margin: 0 0 8px;
+  font-size: 10px;
+  color: #c0c3ac;
+}
+.node-reference-summary small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.7;
+  color: #a7b29a;
+}
+.node-reference-summary .reference-warning {
+  color: #e3bc7f;
+  margin-top: 9px;
+}
+.node-reference-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 31px;
+  border-top: 1px solid #3a4233;
+}
+.node-reference-row > span {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #d1d5c1;
+}
+.node-reference-row .icon-button {
+  width: 24px;
+  height: 25px;
+  color: #c3b38d;
+}
+.edge-reference-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 12px;
+  color: #ded8c7;
+}
+.edge-reference-flow svg {
+  color: #d7ab6a;
+}
+.edge-reference-flow span {
+  overflow-wrap: anywhere;
+}
+.edge-inspector > .button {
+  margin-top: 12px;
+}
+.node-task-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  text-align: center;
+  width: 100%;
+  height: 100%;
+  padding: 18px;
+  color: #bdbfae;
+}
+.node-task-state > svg {
+  color: #d7ab6a;
+}
+.node-task-state strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.node-task-state small {
+  font-size: 9px;
+  font-family: monospace;
+  color: #929b88;
+}
+.node-task-state p {
+  max-height: 47px;
+  overflow: auto;
+  font-size: 10px;
+  color: #e0b49c;
+}
+.node-task-state > span {
+  font-size: 9px;
+  color: #8e9c86;
+}
+.canvas-help-content {
+  color: #c9ccbf;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.canvas-help-content p {
+  margin: 0 0 14px;
+}
+.canvas-help-content dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 22px;
+  row-gap: 12px;
+  padding: 17px 0;
+  border-top: 1px solid #3e4934;
+  border-bottom: 1px solid #3e4934;
+}
+.canvas-help-content dt {
+  color: #d7bc8e;
+}
+.canvas-help-content dd {
+  margin: 0;
+  color: #b3bea5;
+}
+.canvas-help-content small {
+  display: block;
+  margin-top: 14px;
+  color: #8e9c83;
+}
+@media (max-width: 1200px) {
+  .canvas-tool-dock .canvas-create-button {
+    width: 33px;
+    padding: 0;
+  }
+  .canvas-create-button > span {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .canvas-layout .node-port {
+    width: 34px;
+    height: 34px;
+  }
+  .canvas-layout .port-out {
+    right: -18px;
+  }
+  .canvas-layout .port-in {
+    left: -18px;
+  }
+}
+@media (max-width: 600px) {
+  .canvas-tool-dock .canvas-create-button {
+    width: 28px;
+    min-height: 30px;
+  }
+  .canvas-reference-guide {
+    left: 9px;
+    top: 9px;
+    font-size: 9px;
+    gap: 5px;
+  }
+  .canvas-layout .connection-hint {
+    top: 52px;
+    font-size: 10px;
+    padding: 9px;
+  }
+  .canvas-help-content dl {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .canvas-help-content dd {
+    margin-bottom: 9px;
+  }
+}

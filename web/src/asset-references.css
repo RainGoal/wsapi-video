@@ -1,0 +1,186 @@
+.asset-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.asset-origin-generated {
+  color: var(--amber);
+}
+.asset-preview-origin {
+  margin: 14px 0;
+}
+.asset-preview-origin .asset-origin {
+  margin: 0;
+  font-size: 12px;
+}
+.asset-references {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #17191a;
+  overflow: hidden;
+}
+.asset-references-toggle {
+  display: flex;
+  width: 100%;
+  padding: 15px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  text-align: left;
+}
+.asset-references-toggle > span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.asset-references-toggle > span > svg {
+  color: var(--amber);
+}
+.asset-references-toggle[aria-expanded="true"] {
+  border-bottom: 1px solid var(--line);
+}
+.asset-references-body {
+  padding: 0 16px 16px;
+  min-width: 0;
+}
+.asset-references-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+}
+.asset-references-summary > strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.asset-references-summary > button,
+.asset-reference-row > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.asset-reference-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.asset-reference-row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 14px;
+  min-width: 0;
+}
+.asset-reference-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+  font-size: 10px;
+}
+.asset-reference-kind {
+  color: var(--amber);
+}
+.asset-reference-archived {
+  color: var(--muted);
+}
+.asset-reference-deleted {
+  color: var(--red);
+}
+.asset-reference-row > strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.asset-reference-owner-label {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.asset-reference-row dl {
+  margin: 13px 0;
+  font-size: 10px;
+}
+.asset-reference-row dl > div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 7px;
+}
+.asset-reference-row dt {
+  color: var(--quiet);
+}
+.asset-reference-row dd {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.asset-reference-row code {
+  font-size: 10px;
+}
+.asset-reference-help,
+.asset-references-empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.asset-reference-help {
+  margin: 16px 0 0;
+}
+.workspace-shots {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.workspace-shots[hidden] {
+  display: none;
+}
+.shot-reference-target {
+  border-color: var(--amber);
+}
+.shot-reference-target:focus {
+  outline: 1px solid var(--amber);
+  outline-offset: -1px;
+}
+.asset-references .resource-pagination {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.asset-references .resource-pagination > div {
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .asset-references-body {
+    padding: 0 12px 12px;
+  }
+  .asset-reference-row {
+    padding: 12px;
+  }
+  .asset-reference-row dl > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+    margin-top: 10px;
+  }
+  .asset-references .resource-pagination > div {
+    gap: 7px;
+  }
+  .asset-references .resource-pagination .button {
+    padding: 7px 9px;
+    font-size: 10px;
+  }
+}

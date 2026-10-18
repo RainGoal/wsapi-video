@@ -1,0 +1,125 @@
+.operations-signals {
+  margin-bottom: 22px;
+}
+.signal-snapshot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 25px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 18px 0 10px;
+}
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+.signal-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 18px;
+  background: #17191a;
+}
+.signal-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+.signal-card-heading h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.signal-count {
+  font-size: 27px;
+  line-height: 1.2;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  color: var(--amber);
+}
+.signal-count.muted {
+  color: var(--muted);
+}
+.signal-description,
+.signal-empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.9;
+  margin: 11px 0;
+  overflow-wrap: anywhere;
+}
+.signal-oldest {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px 15px;
+  font-size: 10px;
+  color: #b4b4ad;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.signal-samples {
+  padding: 0;
+  margin: 0 0 15px;
+  list-style: none;
+}
+.signal-samples li {
+  border-top: 1px solid #ffffff0b;
+  padding: 11px 0;
+}
+.signal-samples code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.signal-samples li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 15px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.signal-object {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  color: var(--amber);
+}
+.signal-object svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.signal-object:hover code {
+  text-decoration: underline;
+}
+.signal-destination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: normal;
+  text-align: left;
+  font-size: 11px;
+}
+@media (max-width: 1000px) {
+  .signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .signal-card {
+    padding: 14px;
+  }
+  .signal-card-heading h3 {
+    font-size: 12px;
+  }
+  .operations-signals > .admin-panel-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

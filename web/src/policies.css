@@ -1,0 +1,35 @@
+.auth-policies-link {
+  display: block;
+  margin: 24px auto 0;
+  font-size: 11px;
+}
+
+.service-policies {
+  display: grid;
+  gap: 23px;
+}
+
+.service-policies > section + section {
+  padding-top: 23px;
+  border-top: 1px solid #d7ab6a24;
+}
+
+.service-policies h3 {
+  margin: 0 0 10px;
+  color: #d7ab6a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.policy-copy {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #eeece5;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.policy-copy.muted {
+  color: #969992;
+}

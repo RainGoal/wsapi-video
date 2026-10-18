@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+!deploy/.env.production.example
+.runtime/
+/output/
+data/
+web/node_modules/
+web/dist/
+web/.vite/
+web/test-results/
+web/playwright-report/
+backend/bin/
+*.exe
+*.log
+.DS_Store

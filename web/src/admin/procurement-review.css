@@ -1,0 +1,130 @@
+.procurement-review {
+  margin: 26px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 0;
+  background: #17191a;
+}
+.procurement-review-heading,
+.procurement-review-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.procurement-review-heading {
+  justify-content: space-between;
+}
+.procurement-review-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--amber);
+}
+.procurement-review h4 {
+  font-size: 12px;
+  font-weight: 500;
+  margin: 22px 0 12px;
+}
+.procurement-review-current {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.procurement-review-summary {
+  font-size: 11px;
+}
+.procurement-review-summary > strong {
+  font-weight: 500;
+}
+.procurement-review-summary > .mono {
+  color: var(--muted);
+}
+.procurement-review-record .admin-details {
+  margin: 10px 0 16px;
+}
+.procurement-review-text {
+  margin: 0;
+}
+.procurement-review-text > div {
+  margin-top: 13px;
+}
+.procurement-review-text dt {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.procurement-review-text dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.procurement-review-history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 9px;
+}
+.procurement-review-history details {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  padding: 12px;
+  min-width: 0;
+}
+.procurement-review-history summary {
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.procurement-review-history summary > span,
+.procurement-review-history summary > time {
+  margin-right: 12px;
+}
+.procurement-review-history time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.procurement-review-form {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 2px;
+}
+.procurement-review-form textarea {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.procurement-review-submit {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.procurement-review .admin-pagination {
+  flex-wrap: wrap;
+}
+.procurement-review .admin-pagination > div {
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .procurement-review {
+    padding: 14px;
+  }
+  .procurement-review .admin-details {
+    grid-template-columns: 1fr;
+  }
+  .procurement-review-heading {
+    align-items: flex-start;
+  }
+  .procurement-review-heading > button {
+    font-size: 10px;
+  }
+  .procurement-review-submit > button {
+    width: 100%;
+    padding: 9px 10px;
+    font-size: 11px;
+  }
+}

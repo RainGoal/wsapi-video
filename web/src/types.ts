@@ -1,0 +1,164 @@
+import type { PolicyValues } from "./policies";
+
+export type User = {
+  id: string;
+  email: string;
+  display_name: string;
+  role: "admin" | "user";
+  status: string;
+  email_verified: boolean;
+  created_at: string;
+};
+export type Identity = { user: User; csrf_token: string };
+export type System = PolicyValues & {
+  brand: string;
+  demo: boolean;
+  development?: boolean;
+  registration_enabled: boolean;
+  storage_driver: string;
+  payment_enabled: boolean;
+  media_configured: boolean;
+  version: string;
+  support_email?: string;
+};
+export type Project = {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  cover_asset_id?: string;
+  revision: number;
+  shots_revision: number;
+  created_at: string;
+  updated_at: string;
+};
+export type Asset = {
+  id: string;
+  kind: "image" | "video" | "audio";
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  duration_seconds: number;
+  project_id: string;
+  task_id?: string;
+  created_at: string;
+  url: string;
+  preview_url: string;
+  download_url: string;
+};
+export type Shot = {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
+  prompt: string;
+  aspect_ratio: string;
+  duration: number;
+  reference_asset_ids: string[];
+  image_candidate_ids: string[];
+  video_candidate_ids: string[];
+  excluded_candidate_ids?: string[];
+  selected_image_id: string;
+  selected_video_id: string;
+};
+export type ShotsDocument = { revision: number; shots: Shot[] };
+export type CanvasDocument = {
+  revision: number;
+  graph_schema_version: number;
+  graph: {
+    nodes: import("./types/canvas").CanvasNodeData[];
+    edges: import("./types/canvas").CanvasConnection[];
+    viewport: { x: number; y: number; zoom: number };
+  };
+};
+export type Capabilities = {
+  aspect_ratios: string[];
+  durations: number[];
+  resolutions: string[];
+  sizes: string[];
+  qualities: string[];
+  max_images: number;
+  max_videos: number;
+  max_audios: number;
+  supports_audio: boolean;
+  supports_frames: boolean;
+  supports_cancel: boolean;
+  max_reference_duration_seconds?: number;
+  max_reference_bytes?: number;
+  max_reference_width?: number;
+  max_reference_height?: number;
+};
+export type Product = {
+  id: string;
+  name: string;
+  kind: "image" | "video";
+  model: string;
+  credits: number;
+  version: number;
+  capabilities: Capabilities;
+  demo: boolean;
+  [key: string]: unknown;
+};
+export type Quote = {
+  id: string;
+  credits: number;
+  expires_at: string;
+  product_id: string;
+  input_hash: string;
+  demo: boolean;
+};
+export type Task = {
+  id: string;
+  project_id: string;
+  product_id: string;
+  kind: string;
+  model: string;
+  prompt: string;
+  credits: number;
+  execution_status: string;
+  delivery_status: string;
+  settlement_status: string;
+  procurement_status: string;
+  asset_ids: string[];
+  error_code?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+  demo: boolean;
+  product_snapshot?: Product;
+  [key: string]: unknown;
+};
+export type Wallet = { available: number; frozen: number; demo: boolean };
+export type Ledger = {
+  id: string;
+  event_type: string;
+  available_delta: number;
+  frozen_delta: number;
+  reason: string;
+  created_at: string;
+  [key: string]: unknown;
+};
+export type PaymentTier = {
+  id: string;
+  name: string;
+  amount_fen: number;
+  credits: number;
+  active: boolean;
+  version: number;
+  [key: string]: unknown;
+};
+export type PaymentOrder = {
+  id: string;
+  out_trade_no: string;
+  payment_status: string;
+  credit_status: string;
+  amount_fen: number;
+  credits: number;
+  method: string;
+  checkout_url?: string;
+  created_at: string;
+  expires_at: string;
+  [key: string]: unknown;
+};
