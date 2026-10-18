@@ -110,7 +110,7 @@ test("recovering an old task retains historical provenance without a storyboard 
   assert.equal(unassociated.nodes.at(-1).metadata.shotId, undefined);
 });
 
-test("starting from a media node reuses it and keeps the result independent", () => {
+test("starting from a media node updates it in place without adding a result", () => {
   const initial = graph();
   initial.nodes[0] = {
     ...initial.nodes[0],
@@ -120,15 +120,15 @@ test("starting from a media node reuses it and keeps the result independent", ()
   const next = addAcceptedTask(initial, task, "Concept", "source");
   assert.deepEqual(
     next.nodes.map((node) => node.type),
-    ["image", "image"],
+    ["image"],
   );
-  assert.equal(next.connections[0].fromNodeId, "source");
-  assert.equal(next.connections[0].toNodeId, next.nodes[1].id);
-  assert.equal(next.nodes[1].metadata.prompt, task.prompt);
-  assert.equal(next.nodes[0].metadata.prompt, "Original media prompt");
-  assert.equal(next.nodes[0].metadata.assetId, "input-asset");
+  assert.equal(next.connections.length, 0);
+  assert.equal(next.nodes[0].id, "source");
+  assert.deepEqual(next.nodes[0].position, initial.nodes[0].position);
+  assert.equal(next.nodes[0].metadata.prompt, task.prompt);
+  assert.equal(next.nodes[0].metadata.assetId, undefined);
   assert.equal(next.nodes[0].metadata.generationKind, "image");
-  assert.equal(next.nodes[1].metadata.generationSourceNodeId, "source");
+  assert.equal(next.nodes[0].metadata.generationTaskId, task.id);
 });
 
 test("canvas creation initializes mode, connected notes and unique asset references", () => {

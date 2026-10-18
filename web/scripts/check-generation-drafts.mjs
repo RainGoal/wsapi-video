@@ -213,7 +213,7 @@ test("model normalization retains supported settings and translates unsupported 
   assert.equal(original.startFrameId, "first");
 });
 
-test("accepted tasks reuse media sources without replacing their content or later draft", () => {
+test("accepted tasks update media sources in place without replacing a later draft", () => {
   const source = node({
     metadata: {
       prompt: "Original media prompt",
@@ -243,28 +243,25 @@ test("accepted tasks reuse media sources without replacing their content or late
   const after = addAcceptedTask(before, task, "Result", "source", [
     "connected-at-submit",
   ]);
-  assert.equal(after.nodes.length, 2);
-  assert.equal(after.connections.length, 1);
-  assert.equal(after.nodes[0].metadata.prompt, "Original media prompt");
-  assert.equal(after.nodes[0].metadata.assetId, "original-asset");
+  assert.equal(after.nodes.length, 1);
+  assert.equal(after.connections.length, 0);
+  assert.equal(after.nodes[0].metadata.prompt, "Accepted prompt");
+  assert.equal(after.nodes[0].metadata.assetId, undefined);
   assert.deepEqual(
     after.nodes[0].metadata.generationDraft,
     source.metadata.generationDraft,
   );
-  assert.equal(after.nodes[1].metadata.generationSourceNodeId, "source");
-  assert.equal(after.nodes[1].metadata.prompt, "Accepted prompt");
+  assert.equal(after.nodes[0].metadata.generationTaskId, "task");
   assert.deepEqual(after.nodes[0].metadata.generationInputSourceAssetIds, [
     "connected-at-submit",
   ]);
   assert.deepEqual(
-    after.nodes[1].metadata.generationInput.reference_asset_ids,
+    after.nodes[0].metadata.generationInput.reference_asset_ids,
     ["accepted-reference"],
   );
-  after.nodes[0].metadata.generationInput.reference_asset_ids.push(
-    "source-edited",
-  );
+  task.input.reference_asset_ids.push("task-edited");
   assert.deepEqual(
-    after.nodes[1].metadata.generationInput.reference_asset_ids,
+    after.nodes[0].metadata.generationInput.reference_asset_ids,
     ["accepted-reference"],
   );
   assert.equal(addAcceptedTask(after, task, "Result", "source"), after);
@@ -305,7 +302,7 @@ test("legacy media sources restore accepted roles from the submission connection
   );
 });
 
-test("continuing from a generated result preserves the original task provenance", () => {
+test("continuing from a generated result replaces its active task and preserves the draft", () => {
   const source = node({
     metadata: {
       assetId: "original-asset",
@@ -335,10 +332,16 @@ test("continuing from a generated result preserves the original task provenance"
     "source",
     ["original-asset"],
   );
-  assert.deepEqual(after.nodes[0], source);
-  assert.equal(after.nodes[1].metadata.prompt, "New prompt");
+  assert.equal(after.nodes.length, 1);
+  assert.equal(after.nodes[0].id, source.id);
+  assert.equal(after.nodes[0].metadata.prompt, "New prompt");
+  assert.equal(after.nodes[0].metadata.generationDraft.prompt, "New draft");
+  assert.deepEqual(after.nodes[0].metadata.generationPreviousTaskIds, [
+    "original-task",
+  ]);
+  assert.equal(source.metadata.generationTaskId, "original-task");
   assert.deepEqual(
-    after.nodes[1].metadata.generationInput.reference_asset_ids,
+    after.nodes[0].metadata.generationInput.reference_asset_ids,
     ["new-reference"],
   );
 });

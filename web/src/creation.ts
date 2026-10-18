@@ -179,9 +179,12 @@ export function canvasGenerationDefaults(
     prompt,
     referenceIds: [
       ...new Set(
-        [...referenceIds, node?.metadata?.assetId].filter((id): id is string =>
-          Boolean(id),
-        ),
+        [
+          ...referenceIds,
+          ...(!node?.metadata?.generationTaskId
+            ? [node?.metadata?.assetId]
+            : []),
+        ].filter((id): id is string => Boolean(id)),
       ),
     ],
   };
@@ -264,6 +267,17 @@ export function normalizeGenerationDraft(
   };
 }
 
+function generationTaskTime(value: unknown) {
+  if (typeof value !== "string") return;
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return;
+  // Date.parse truncates server nanoseconds; retain the remainder for ordering.
+  const fraction = (value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/i)?.[1] ?? "")
+    .slice(3)
+    .padEnd(6, "0");
+  return { value, milliseconds, fraction };
+}
+
 export function addAcceptedTask(
   graph: Graph,
   task: Task,
@@ -279,17 +293,94 @@ export function addAcceptedTask(
   const nodes = [...graph.nodes];
   const connections = [...graph.connections];
   let source = nodes.find((node) => node.id === sourceId);
+  if (sourceId !== undefined && !source) return graph;
   const inputMetadata = {
     generationInput,
     generationInputSourceAssetIds: generationInput
       ? [
           ...new Set(
             sourceReferenceIds ??
-              (source?.metadata?.assetId ? [source.metadata.assetId] : []),
+              (source?.metadata?.assetId &&
+              !["image", "video"].includes(source.type)
+                ? [source.metadata.assetId]
+                : []),
           ),
         ]
       : undefined,
   };
+  if (source && ["image", "video"].includes(source.type)) {
+    const previousIds = Array.isArray(
+      source.metadata?.generationPreviousTaskIds,
+    )
+      ? source.metadata.generationPreviousTaskIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [];
+    if (previousIds.includes(task.id)) return graph;
+    const currentTime = generationTaskTime(
+      source.metadata?.generationTaskCreatedAt,
+    );
+    const incomingTime = generationTaskTime(task.created_at);
+    if (
+      currentTime &&
+      (!incomingTime ||
+        incomingTime.milliseconds < currentTime.milliseconds ||
+        (incomingTime.milliseconds === currentTime.milliseconds &&
+          incomingTime.fraction < currentTime.fraction))
+    )
+      return graph;
+    const draft = readGenerationDraft(source.metadata?.generationDraft);
+    const previousAssetId = source.metadata?.assetId;
+    const metadata = {
+      ...source.metadata,
+      ...inputMetadata,
+      ...(draft
+        ? {
+            generationDraft: {
+              ...draft,
+              ...(source.type !== task.kind && draft.kind !== task.kind
+                ? {
+                    kind: task.kind as GenerationDraft["kind"],
+                    productId: task.product_id,
+                  }
+                : {}),
+              connectedAssetIds: draft.connectedAssetIds.filter(
+                (id) =>
+                  id !== previousAssetId || sourceReferenceIds?.includes(id),
+              ),
+            },
+          }
+        : {}),
+      generationTaskId: task.id,
+      generationTaskCreatedAt: incomingTime?.value,
+      generationPreviousTaskIds: [
+        ...new Set([
+          ...previousIds,
+          ...(typeof source.metadata?.generationTaskId === "string"
+            ? [source.metadata.generationTaskId]
+            : []),
+        ]),
+      ],
+      generationKind: task.kind,
+      prompt: task.prompt,
+      productId: task.product_id,
+      shotId: acceptedShotId,
+      assetId: undefined,
+      executionStatus: task.execution_status,
+      deliveryStatus: task.delivery_status,
+      procurementStatus: task.procurement_status,
+      errorMessage: task.error_message || "",
+      error_message: undefined,
+    };
+    return {
+      ...graph,
+      nodes: nodes.map((node) =>
+        node.id === sourceId
+          ? { ...node, type: task.kind as CanvasNodeType, metadata }
+          : node,
+      ),
+    };
+  }
   if (!source || !["config", "image", "video"].includes(source.type)) {
     const reference = source;
     const position = reference
@@ -403,7 +494,13 @@ export function reconcileGeneratedNodes(
       (item) => item.id === node.metadata?.generationTaskId,
     );
     if (!task) return node;
-    const asset = assets.find((item) => task.asset_ids.includes(item.id));
+    const asset =
+      task.execution_status === "completed" && task.delivery_status === "ready"
+        ? assets.find(
+            (item) =>
+              task.asset_ids.includes(item.id) && item.kind === task.kind,
+          )
+        : undefined;
     const generationInput = readGenerationInput(task.input);
     const metadata = {
       ...node.metadata,
@@ -411,8 +508,9 @@ export function reconcileGeneratedNodes(
       deliveryStatus: task.delivery_status,
       procurementStatus: task.procurement_status,
       errorMessage: task.error_message || "",
+      error_message: undefined,
       ...(generationInput ? { generationInput } : {}),
-      ...(asset ? { assetId: asset.id } : {}),
+      assetId: asset?.id,
     };
     if (JSON.stringify(metadata) === JSON.stringify(node.metadata)) return node;
     changed = true;

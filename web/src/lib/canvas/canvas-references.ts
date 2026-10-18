@@ -20,13 +20,10 @@ export function canOutputReference(node: CanvasNodeData): boolean {
 }
 
 export function canReceiveReference(node: CanvasNodeData): boolean {
-  return (
-    ["config", "image", "video"].includes(node.type) &&
-    (!node.metadata?.generationTaskId || Boolean(node.metadata.assetId))
-  );
+  return ["config", "image", "video"].includes(node.type);
 }
 
-/** Media and config nodes receive references; accepted outputs retain separate provenance. */
+/** Inputs can change for the next generation without changing an accepted task. */
 export function validateReferenceConnection(
   graph: Graph,
   fromNodeId: string,
@@ -55,7 +52,7 @@ export function collectCanvasReferences(graph: Graph, nodeId: string) {
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const sourceNodeId = nodes.get(nodeId)?.metadata?.generationSourceNodeId;
   function visit(id: string) {
-    if (visited.has(id)) return;
+    if (id === nodeId || visited.has(id)) return;
     visited.add(id);
     const node = nodes.get(id);
     const issue = (code: CanvasReferenceIssue["code"]) =>

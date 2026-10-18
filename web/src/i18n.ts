@@ -83,8 +83,8 @@ const english: Record<string, string> = {
   确认生成: "Confirm generation",
   获取报价: "Get quote",
   点击并在属性栏编辑笔记: "Click to edit this note in the inspector",
-  "从工具栏或双击空白创建图片、视频节点，点击节点输入提示词和参数。生成结果保留来源连线，可继续作为参考。":
-    "Create image or video nodes from the toolbar or by double-clicking the canvas. Click a node to enter its prompt and parameters. Results keep their source connections and can be reused as references.",
+  "从工具栏或双击空白创建图片、视频节点，点击节点输入提示词和参数。进度与成品直接显示在当前节点，再次生成也更新这个节点。":
+    "Create image or video nodes from the toolbar or by double-clicking the canvas. Click a node to enter its prompt and parameters. Progress and results appear in that node; generating again updates the same node.",
   "把素材、笔记或分组右侧的引用端口，拖到创作节点左侧的参考端口；拖到空白可续建节点。也可以依次点击两端连接。":
     "Drag the reference port on an asset, note or group to a creation node's input. Drop it on empty canvas to create a connected node. You can also click both ports in sequence.",
   "在节点创作面板中添加素材、指定首尾帧并确认报价。点击空白收起，重新点击节点继续编辑。连线不会自动生成或扣费。":

@@ -296,27 +296,22 @@ export function Workspace({
   }, []);
   useEffect(() => {
     const list = items(tasks.data);
-    if (
-      !list.some(
-        (t) =>
-          !["completed", "failed", "canceled"].includes(t.execution_status) ||
-          (t.execution_status === "completed" &&
-            !["ready", "error"].includes(t.delivery_status)),
-      )
-    )
-      return;
+    const known = new Set(assets.data.items.map((asset) => asset.id));
+    const pending = list.filter(
+      (task) =>
+        !["completed", "failed", "canceled"].includes(task.execution_status) ||
+        (task.execution_status === "completed" &&
+          (!["ready", "error"].includes(task.delivery_status) ||
+            (task.delivery_status === "ready" &&
+              task.asset_ids.some((id) => !known.has(id))))),
+    );
+    // A fast task can already be ready on the first refresh, before its asset
+    // enters the loaded library. Fetch that asset even without a running task.
+    if (!pending.length) return;
     if (tasks.loading || assets.loading) return;
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
-        const pending = list.filter(
-          (task) =>
-            !["completed", "failed", "canceled"].includes(
-              task.execution_status,
-            ) ||
-            (task.execution_status === "completed" &&
-              !["ready", "error"].includes(task.delivery_status)),
-        );
         const updated: Task[] = [];
         for (let index = 0; index < pending.length; index += 8) {
           updated.push(
@@ -328,7 +323,6 @@ export function Workspace({
           );
           if (!live) return;
         }
-        const known = new Set(assets.data.items.map((asset) => asset.id));
         const missing = [
           ...new Set(updated.flatMap((task) => task.asset_ids)),
         ].filter((id) => !known.has(id));
@@ -527,9 +521,12 @@ export function Workspace({
       ...linked,
       assetIds: [
         ...new Set(
-          [...linked.assetIds, node?.metadata?.assetId].filter(
-            (id): id is string => Boolean(id),
-          ),
+          [
+            ...linked.assetIds,
+            ...(!node?.metadata?.generationTaskId && node?.metadata?.assetId
+              ? [node.metadata.assetId]
+              : []),
+          ].filter((id): id is string => Boolean(id)),
         ),
       ],
     };
@@ -544,11 +541,10 @@ export function Workspace({
       assets.data.items,
     );
     const source = liveGraph.nodes.find((item) => item.id === sourceId);
+    // Accepted media becomes the output in place; its old content is no longer
+    // a connected source. Explicitly selected input assets stay in the draft.
     const connected = source
-      ? [
-          ...collectCanvasReferences(liveGraph, source.id).assetIds,
-          ...(source.metadata?.assetId ? [source.metadata.assetId] : []),
-        ]
+      ? collectCanvasReferences(liveGraph, source.id).assetIds
       : undefined;
     commitCanvas(
       addAcceptedTask(
@@ -583,7 +579,9 @@ export function Workspace({
     const connectedIds = [
       ...new Set([
         ...links.assetIds,
-        ...(target.metadata?.assetId ? [target.metadata.assetId] : []),
+        ...(!target.metadata?.generationTaskId && target.metadata?.assetId
+          ? [target.metadata.assetId]
+          : []),
       ]),
     ];
     const defaults = canvasGenerationDefaults(target);

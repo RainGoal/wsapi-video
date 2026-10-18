@@ -78,6 +78,20 @@ test("references expand groups, deduplicate direct inputs, and never follow gene
   assert.deepEqual(collectCanvasReferences(value, "result").assetIds, []);
 });
 
+test("a group input excludes the receiving media node's own output", () => {
+  const value = graph(
+    [
+      node("group", "group"),
+      node("target", "image", { groupId: "group", assetId: "own-output" }),
+      node("other", "image", { groupId: "group", assetId: "reference" }),
+    ],
+    [edge("group", "target")],
+  );
+  assert.deepEqual(collectCanvasReferences(value, "target").assetIds, [
+    "reference",
+  ]);
+});
+
 test("damaged and unfinished references report issues and group cycles terminate", () => {
   const value = graph(
     [
@@ -127,10 +141,7 @@ test("manual connections accept ready references to media and config inputs", ()
   assert.equal(canReceiveReference(node("audio", "audio")), false);
   assert.equal(validateReferenceConnection(value, "config", "config"), "self");
   assert.equal(validateReferenceConnection(value, "config", "other"), "source");
-  assert.equal(
-    validateReferenceConnection(value, "asset", "pending"),
-    "target",
-  );
+  assert.equal(validateReferenceConnection(value, "asset", "pending"), null);
   assert.equal(
     validateReferenceConnection(value, "pending", "config"),
     "source",
