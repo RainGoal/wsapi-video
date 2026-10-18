@@ -63,9 +63,97 @@ jobs:
         run: cmp public/third-party-notices.txt dist/third-party-notices.txt
         working-directory: web
   container:
-    runs-on: ubuntu-latest
+    name: Container (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     needs: [backend, web]
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate production Compose configuration
+        env:
+          PUBLIC_URL: https://setup-smoke.invalid
+          POSTGRES_PASSWORD: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          APP_SECRET: ci-configuration-only-not-a-deployed-production-key
+        run: |
+          docker compose --env-file deploy/.env.production.example -f docker-compose.yml config --quiet
+          docker compose --env-file deploy/.env.production.example -f deploy/compose.yaml config --quiet
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build production image for smoke and publication
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: frame-studio:ci
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=studio-linux-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=studio-linux-${{ matrix.arch }}
+      - name: Verify native image architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' frame-studio:ci)" = "linux/$ARCH"
+      - name: Prepare isolated smoke database image
+        run: docker pull postgres:16.4-bookworm
+      - name: Test production administrator setup without external services
+        run: node deploy/smoke.mjs frame-studio:ci
+      - name: Resolve lowercase image repository
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stage the exact native image that passed smoke
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          image_ref="$IMAGE:ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker tag frame-studio:ci "$image_ref"
+          docker push "$image_ref"
+          immutable_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image_ref")
+          digest="${immutable_ref#*@}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/digests"
+          printf '%s\n' "$digest" > "$RUNNER_TEMP/digests/$ARCH.txt"
+      - name: Export tested native image digest
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+  publish:
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    needs: container
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -88,7 +176,8 @@ jobs:
             echo 'Release tags must use vMAJOR.MINOR.PATCH without leading zeros.' >&2
             exit 1
           fi
-          test "$(git rev-parse "$GITHUB_REF^{commit}")" = "$GITHUB_SHA"
+          git fetch --no-tags origin "+$GITHUB_REF:refs/release/current"
+          test "$(git rev-parse 'refs/release/current^{commit}')" = "$GITHUB_SHA"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/master
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/existing-releases"
           if grep -Fxq -- "$tag" "$RUNNER_TEMP/existing-releases"; then
@@ -96,73 +185,54 @@ jobs:
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Validate production Compose configuration
-        env:
-          PUBLIC_URL: https://setup-smoke.invalid
-          POSTGRES_PASSWORD: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          APP_SECRET: ci-configuration-only-not-a-deployed-production-key
-        run: |
-          docker compose --env-file deploy/.env.production.example -f docker-compose.yml config --quiet
-          docker compose --env-file deploy/.env.production.example -f deploy/compose.yaml config --quiet
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build production image for smoke and publication
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: frame-studio:ci
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-          cache-from: type=gha,scope=studio-linux-amd64
-          cache-to: type=gha,mode=max,scope=studio-linux-amd64
-      - name: Prepare isolated smoke database image
-        run: docker pull postgres:16.4-bookworm
-      - name: Test production administrator setup without external services
-        run: node deploy/smoke.mjs frame-studio:ci
       - name: Resolve lowercase image repository
-        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         id: image
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-      - name: Log in to GitHub Container Registry
-        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
-        uses: docker/login-action@v3
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish the exact image that passed smoke
-        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+      - name: Publish index of both tested native images
         id: publish
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
+          amd64_digest=$(cat "$RUNNER_TEMP/digests/amd64.txt")
+          arm64_digest=$(cat "$RUNNER_TEMP/digests/arm64.txt")
+          [[ "$amd64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$arm64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$amd64_digest" != "$arm64_digest"
           image_ref="$IMAGE:sha-$GITHUB_SHA"
           if [ -n "$RELEASE_TAG" ]; then
-            git fetch --no-tags origin "+$GITHUB_REF:refs/release/current"
-            test "$(git rev-parse 'refs/release/current^{commit}')" = "$GITHUB_SHA"
             image_ref="$IMAGE:$RELEASE_TAG"
           fi
-          docker tag frame-studio:ci "$image_ref"
-          docker push "$image_ref"
-          immutable_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image_ref")
-          digest="${immutable_ref#*@}"
+          docker buildx imagetools create --metadata-file "$RUNNER_TEMP/index.json" \
+            --tag "$image_ref" "$IMAGE@$amd64_digest" "$IMAGE@$arm64_digest"
+          digest=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/index.json")
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect --raw "$IMAGE@$digest" > "$RUNNER_TEMP/manifest.json"
+          jq -e --arg amd64 "$amd64_digest" --arg arm64 "$arm64_digest" '
+            (.manifests | length == 2) and
+            any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
+            any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")
+          ' "$RUNNER_TEMP/manifest.json" > /dev/null
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           {
-            echo '## Published image'
+            echo '## Published multi-platform image'
             echo "- Version: \`$image_ref\`"
             echo "- Commit: \`$GITHUB_SHA\`"
-            echo "- Immutable reference: \`$immutable_ref\`"
+            echo '- Platforms: linux/amd64, linux/arm64'
+            echo "- Immutable reference: \`$IMAGE@$digest\`"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$RELEASE_TAG" ]; then
             exit 0
@@ -170,15 +240,14 @@ jobs:
           current_head=$(git ls-remote origin refs/heads/master | cut -f1)
           test -n "$current_head"
           if [ "$current_head" = "$GITHUB_SHA" ]; then
-            docker tag frame-studio:ci "$IMAGE:latest"
-            docker push "$IMAGE:latest"
+            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$digest"
             echo "- Latest: \`$IMAGE:latest\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo '- Latest was not changed because master has a newer commit.' >> "$GITHUB_STEP_SUMMARY"
           fi
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: container
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -187,9 +256,9 @@ jobs:
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_TAG: ${{ needs.container.outputs.release_tag }}
-      IMAGE: ${{ needs.container.outputs.image }}
-      DIGEST: ${{ needs.container.outputs.digest }}
+      RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+      IMAGE: ${{ needs.publish.outputs.image }}
+      DIGEST: ${{ needs.publish.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -215,7 +284,7 @@ jobs:
           output="$RUNNER_TEMP/release-assets"
           {
             printf '# FRAME STUDIO %s\n\n' "$RELEASE_TAG"
-            printf '独立图片与视频创作平台；使用 Docker Compose 部署，镜像支持 linux/amd64。\n\n'
+            printf '独立图片与视频创作平台；使用 Docker Compose 部署，镜像原生支持 linux/amd64 和 linux/arm64，Docker 自动选择宿主机架构。\n\n'
             printf -- '- 源码提交：`%s`\n' "$GITHUB_SHA"
             printf -- '- 版本镜像：`%s:%s`\n' "$IMAGE" "$RELEASE_TAG"
             printf -- '- 固定镜像：`%s@%s`\n\n' "$IMAGE" "$DIGEST"
@@ -228,7 +297,7 @@ jobs:
             echo 'docker compose --env-file deploy/.env.production pull'
             echo 'docker compose --env-file deploy/.env.production up -d'
             echo '```'
-            printf '\n前后端检查、镜像构建及隔离首装/重启 smoke 已通过。Sub2API、支付、SMTP、私有存储和正式 HTTPS 的真实联调仍需在目标环境完成；外部接入参数可在运营后台填写。\n'
+            printf '\n前后端检查、两种架构的原生镜像构建及隔离首装/重启 smoke 已通过。Sub2API、支付、SMTP、私有存储和正式 HTTPS 的真实联调仍需在目标环境完成；外部接入参数可在运营后台填写。\n'
           } > "$output/release-notes.md"
           gh release create "$RELEASE_TAG" "$output"/*.tar.gz "$output/image-digest.txt" "$output/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" --verify-tag --title "FRAME STUDIO $RELEASE_TAG" \

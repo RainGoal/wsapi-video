@@ -6,7 +6,7 @@
 
 前端 React 19 / TypeScript / Vite；后端 Go 1.24 / PostgreSQL 16。媒体通过唯一的 Sub2API 连接器生成，支付通过易支付接入。账号、零售钱包、项目、素材和充值订单均由本平台独立管理。
 
-代码仓库：[RainGoal/wsapi-video](https://github.com/RainGoal/wsapi-video)，主分支为 `master`。推送到 `master` 后，GitHub Actions 完成代码检查、镜像构建和隔离首装 smoke，再把同一个受测镜像发布到 `ghcr.io/raingoal/wsapi-video`，提供 `latest` 和 `sha-<完整提交 SHA>` 标签。推送 `vMAJOR.MINOR.PATCH` 版本标签后，执行同样的检查并发布对应版本镜像及 [GitHub Release](https://github.com/RainGoal/wsapi-video/releases)，附带固定镜像摘要的 Compose 部署包与校验和。服务器使用根目录 [docker-compose.yml](docker-compose.yml) 或 Release 部署包拉取镜像部署。
+代码仓库：[RainGoal/wsapi-video](https://github.com/RainGoal/wsapi-video)，主分支为 `master`。推送到 `master` 后，GitHub Actions 完成代码检查，在 x86 和 ARM 原生 runner 分别构建镜像并执行隔离首装 smoke，再把两份受测镜像合并发布到 `ghcr.io/raingoal/wsapi-video`，提供 `latest` 和 `sha-<完整提交 SHA>` 标签。推送 `vMAJOR.MINOR.PATCH` 版本标签后，执行同样的检查并发布对应版本镜像及 [GitHub Release](https://github.com/RainGoal/wsapi-video/releases)，附带固定镜像摘要的 Compose 部署包与校验和。从 `v0.1.1` 起，镜像原生支持 `linux/amd64` 和 `linux/arm64`，Docker 自动选择宿主机架构。服务器使用根目录 [docker-compose.yml](docker-compose.yml) 或 Release 部署包拉取镜像部署。
 
 核心创作、账号账务和运营后台已有实现及本地验证；真实模型、支付、SMTP、私有云存储和生产运行验收仍需在目标环境完成。具体进度与证据见 [实施状态](docs/IMPLEMENTATION_STATUS.md) 和[上线待验清单](docs/RELEASE_READINESS.md)。
 
