@@ -1,11 +1,13 @@
-name: Checks
+name: Checks and Releases
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 concurrency:
   group: checks-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' && !startsWith(github.ref, 'refs/tags/v') }}
 permissions:
   contents: read
 jobs:
@@ -67,8 +69,33 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.publish.outputs.digest }}
+      release_tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate release tag and master ancestry
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Release tags must use vMAJOR.MINOR.PATCH without leading zeros.' >&2
+            exit 1
+          fi
+          test "$(git rev-parse "$GITHUB_REF^{commit}")" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/existing-releases"
+          if grep -Fxq -- "$tag" "$RUNNER_TEMP/existing-releases"; then
+            echo 'This version already has a Release; publish a new version instead of replacing it.' >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -100,31 +127,46 @@ jobs:
       - name: Test production administrator setup without external services
         run: node deploy/smoke.mjs frame-studio:ci
       - name: Resolve lowercase image repository
-        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         id: image
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - name: Log in to GitHub Container Registry
-        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish the exact image that passed smoke
-        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        id: publish
         env:
           IMAGE: ${{ steps.image.outputs.name }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          docker tag frame-studio:ci "$IMAGE:sha-$GITHUB_SHA"
-          docker push "$IMAGE:sha-$GITHUB_SHA"
-          immutable_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:sha-$GITHUB_SHA")
+          image_ref="$IMAGE:sha-$GITHUB_SHA"
+          if [ -n "$RELEASE_TAG" ]; then
+            git fetch --no-tags origin "+$GITHUB_REF:refs/release/current"
+            test "$(git rev-parse 'refs/release/current^{commit}')" = "$GITHUB_SHA"
+            image_ref="$IMAGE:$RELEASE_TAG"
+          fi
+          docker tag frame-studio:ci "$image_ref"
+          docker push "$image_ref"
+          immutable_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image_ref")
+          digest="${immutable_ref#*@}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
           {
             echo '## Published image'
-            echo "- Commit: \`$IMAGE:sha-$GITHUB_SHA\`"
+            echo "- Version: \`$image_ref\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Immutable reference: \`$immutable_ref\`"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$RELEASE_TAG" ]; then
+            exit 0
+          fi
           current_head=$(git ls-remote origin refs/heads/master | cut -f1)
           test -n "$current_head"
           if [ "$current_head" = "$GITHUB_SHA" ]; then
@@ -134,3 +176,60 @@ jobs:
           else
             echo '- Latest was not changed because master has a newer commit.' >> "$GITHUB_STEP_SUMMARY"
           fi
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: github-release-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.container.outputs.release_tag }}
+      IMAGE: ${{ needs.container.outputs.image }}
+      DIGEST: ${{ needs.container.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare versioned Compose deployment assets
+        run: |
+          git fetch --no-tags origin "+$GITHUB_REF:refs/release/current"
+          test "$(git rev-parse 'refs/release/current^{commit}')" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          bundle="$RUNNER_TEMP/compose-release"
+          output="$RUNNER_TEMP/release-assets"
+          mkdir -p "$bundle/deploy" "$bundle/docs" "$output"
+          cp docker-compose.yml "$bundle/"
+          cp deploy/.env.production.example deploy/nginx.conf.example "$bundle/deploy/"
+          cp docs/DEPLOYMENT.md docs/OPERATIONS.md "$bundle/docs/"
+          sed -i "s|^FRAME_IMAGE=.*$|FRAME_IMAGE=$IMAGE@$DIGEST|" "$bundle/deploy/.env.production.example"
+          tar -czf "$output/wsapi-video-$RELEASE_TAG-compose.tar.gz" -C "$bundle" .
+          printf '%s@%s\n' "$IMAGE" "$DIGEST" > "$output/image-digest.txt"
+          (cd "$output"; sha256sum *.tar.gz image-digest.txt > SHA256SUMS)
+      - name: Publish GitHub Release with deployment files
+        run: |
+          output="$RUNNER_TEMP/release-assets"
+          {
+            printf '# FRAME STUDIO %s\n\n' "$RELEASE_TAG"
+            printf '独立图片与视频创作平台；使用 Docker Compose 部署，镜像支持 linux/amd64。\n\n'
+            printf -- '- 源码提交：`%s`\n' "$GITHUB_SHA"
+            printf -- '- 版本镜像：`%s:%s`\n' "$IMAGE" "$RELEASE_TAG"
+            printf -- '- 固定镜像：`%s@%s`\n\n' "$IMAGE" "$DIGEST"
+            printf '附件包含 Compose、生产配置模板、Nginx 示例和部署/运行说明。模板已固定到上述镜像摘要，不含可用密钥。\n\n'
+            printf '解压部署包，在项目根目录复制模板并填写基础配置：\n\n'
+            echo '```sh'
+            echo 'cp deploy/.env.production.example deploy/.env.production'
+            echo '# 填写站点 HTTPS 地址、数据库密码、固定 APP_SECRET 和初装管理员账号后继续'
+            echo 'docker compose --env-file deploy/.env.production config --quiet'
+            echo 'docker compose --env-file deploy/.env.production pull'
+            echo 'docker compose --env-file deploy/.env.production up -d'
+            echo '```'
+            printf '\n前后端检查、镜像构建及隔离首装/重启 smoke 已通过。Sub2API、支付、SMTP、私有存储和正式 HTTPS 的真实联调仍需在目标环境完成；外部接入参数可在运营后台填写。\n'
+          } > "$output/release-notes.md"
+          gh release create "$RELEASE_TAG" "$output"/*.tar.gz "$output/image-digest.txt" "$output/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "FRAME STUDIO $RELEASE_TAG" \
+            --notes-file "$output/release-notes.md" --generate-notes

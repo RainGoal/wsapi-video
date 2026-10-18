@@ -91,7 +91,7 @@ docker compose --env-file deploy/.env.production up -d --no-deps --force-recreat
 
 升级前备份数据库、私有对象、部署配置和对应 `APP_SECRET`，记录上一镜像 ID/digest。保持 `COMPOSE_PROJECT_NAME` 与数据库卷名称，使用新版本镜像重建应用；已有事务迁移不可编辑，失败先保留卷与日志，回退前确认旧应用兼容已应用 schema。不要通过删卷或重建空库修复升级问题。
 
-在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为完整镜像引用：`ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`，或 `ghcr.io/raingoal/wsapi-video@sha256:<digest>`。要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
+在 `deploy/.env.production` 中将 `FRAME_IMAGE` 设置为完整镜像引用：`ghcr.io/raingoal/wsapi-video:v0.1.0`、`ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`，或 `ghcr.io/raingoal/wsapi-video@sha256:<digest>`。要跟随最新已通过检查的 master 构建，可使用 `ghcr.io/raingoal/wsapi-video:latest`。然后只拉取并重建应用：
 
 ```sh
 docker compose --env-file deploy/.env.production pull app
@@ -115,14 +115,26 @@ docker compose --env-file deploy/.env.production ps
 
 ## 6. 自动镜像发布与隔离首装 smoke
 
-[GitHub Actions](https://github.com/RainGoal/wsapi-video/actions/workflows/ci.yml) 在每次推送和 PR 时执行检查；只有 `master` 的 push 或在 `master` 上手动运行时发布镜像。先完成 Go race/vet/build、前端测试/格式/构建和两份 Compose 配置校验，再用 Buildx 构建并加载本地 `frame-studio:ci`，预拉 PostgreSQL 并执行 `deploy/smoke.mjs`。任一检查失败均不发布；成功后直接给这个经过 smoke 的镜像打标签并推送，不重新构建另一个镜像。
+[GitHub Actions](https://github.com/RainGoal/wsapi-video/actions/workflows/ci.yml) 在分支推送、`v*` 标签推送和 PR 时执行检查。`master` 的 push 或在 `master` 上手动运行时发布开发镜像；版本标签触发版本镜像和 GitHub Release。两条路径都先完成 Go race/vet/build、前端测试/格式/构建和两份 Compose 配置校验，再用 Buildx 构建并加载本地 `frame-studio:ci`，预拉 PostgreSQL 并执行 `deploy/smoke.mjs`。任一检查失败均不发布；成功后直接给这个经过 smoke 的镜像打标签并推送，不重新构建另一个镜像。
 
 镜像当前支持 `linux/amd64`：
 
 - `ghcr.io/raingoal/wsapi-video:sha-<完整提交 SHA>`：按提交定位的构建，另在 Actions 摘要中提供 digest，固定部署优先使用 digest。
 - `ghcr.io/raingoal/wsapi-video:latest`：当前 master 的成功构建；master 运行串行，发布前再次核对远端 HEAD，过时提交不更新此标签。
+- `ghcr.io/raingoal/wsapi-video:vMAJOR.MINOR.PATCH`：对应 [GitHub Release](https://github.com/RainGoal/wsapi-video/releases) 的版本镜像；版本标签构建不修改 `latest` 或 `sha-` 标签，各次构建的固定 digest 记录在对应发布结果中。
 
-发布使用 GitHub 自动提供的 `GITHUB_TOKEN`，仅 container job 有 `packages: write`；不需要额外 Docker Hub 或供应商密钥。仓库管理员需允许 GitHub Actions 运行及其包写入；如果账号/组织策略禁止，需在 GitHub 侧调整。流程使用 Buildx 的 GHA 缓存，并附仓库、提交的 OCI 标签。它只发布镜像，不连接或重启部署服务器。
+创建正式版本时，使用严格的 `vMAJOR.MINOR.PATCH` 格式（例如 `v0.1.1`，数字无前导零），标签必须指向已进入 `master` 历史的提交。发布前会再次核对远端标签所指提交。示例：
+
+```sh
+git switch master
+git pull --ff-only origin master
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
+```
+
+只有镜像发布成功后才创建 GitHub Release。Release 包含版本镜像、源码提交、固定 digest、自动变更记录，以及 Compose 部署压缩包、`image-digest.txt` 和 `SHA256SUMS`。部署包内配置模板固定到该次镜像 digest，保持根目录 Compose 和 `deploy/` 布局；解压后复制模板、填写基础配置，再按第 2 节启动。附件上传完整后才公开 Release。已经存在 Release 的标签不会重复构建发布；禁止移动已发布标签或用旧版本号覆盖，后续变更应使用新的版本号。若只有 Release job 失败，可以在 Actions 重跑该失败 job，继续使用前一步已发布的镜像摘要。
+
+发布使用 GitHub 自动提供的 `GITHUB_TOKEN`，仅 container job 有 `packages: write`，仅 release job 有 `contents: write`；不需要额外 Docker Hub 或供应商密钥。仓库管理员需允许 GitHub Actions 运行及其包写入；如果账号/组织策略禁止，需在 GitHub 侧调整。流程使用 Buildx 的 GHA 缓存，并附仓库、提交的 OCI 标签。它发布镜像和版本文件，不连接或重启部署服务器。
 
 **首次创建的 GHCR 包默认可能是 private，即使代码仓库公开。** 如需服务器匿名拉取，在 GitHub 的 Packages → `wsapi-video` → Package settings 中确认可见性为 public；否则在服务器执行 `docker login ghcr.io --username RainGoal`，按提示提供具有 `read:packages` 权限的访问令牌。不要把令牌写入 Compose、env 模板或提交仓库。公开包也需要等首个成功发布完成后才可拉取。
 
@@ -140,7 +152,7 @@ node deploy/smoke.mjs frame-studio:ci
 
 配置语法依据：[Compose 服务](https://docs.docker.com/reference/compose-file/services/)、[变量插值](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)、[Docker HEALTHCHECK](https://docs.docker.com/reference/dockerfile/#healthcheck)、[内部网络](https://docs.docker.com/reference/cli/docker/network/create/)、[Nginx 代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)。
 
-发布配置依据：[向 GitHub Container Registry 发布](https://docs.github.com/en/actions/use-cases-and-examples/publishing-packages/publishing-docker-images)、[GHCR 认证与包可见性](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)、[Buildx Actions](https://github.com/docker/build-push-action)。
+发布配置依据：[向 GitHub Container Registry 发布](https://docs.github.com/en/actions/use-cases-and-examples/publishing-packages/publishing-docker-images)、[GHCR 认证与包可见性](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)、[Buildx Actions](https://github.com/docker/build-push-action)、[GitHub CLI 创建 Release](https://cli.github.com/manual/gh_release_create)。
 
 ## 7. 本地发布候选边界
 
