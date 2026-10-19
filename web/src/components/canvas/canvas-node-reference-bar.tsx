@@ -39,6 +39,7 @@ export function CanvasNodeReferenceBar({
   startFrameId,
   endFrameId,
   caps,
+  referenceMode = "reference",
   disabled,
   uploading,
   onRemove,
@@ -51,12 +52,13 @@ export function CanvasNodeReferenceBar({
   startFrameId: string;
   endFrameId: string;
   caps?: Capabilities;
+  referenceMode?: "reference" | "frames" | "mixed";
   disabled: boolean;
   uploading: boolean;
   onRemove: (id: string) => void;
   onSelect: (id: string, role: ReferenceRole) => void;
-  onPickReferences?: () => void;
-  onUploadReferences?: (files: FileList) => void;
+  onPickReferences?: (role: ReferenceRole) => void;
+  onUploadReferences?: (files: FileList, role: ReferenceRole) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -82,6 +84,9 @@ export function CanvasNodeReferenceBar({
   useEffect(() => {
     if (!caps?.supports_frames) setRole("reference");
   }, [caps?.supports_frames]);
+  useEffect(() => {
+    setRole(referenceMode === "frames" ? "start" : "reference");
+  }, [referenceMode]);
   return (
     <div className="canvas-node-reference-bar" ref={root}>
       <div className="node-reference-heading">
@@ -91,6 +96,25 @@ export function CanvasNodeReferenceBar({
         </span>
       </div>
       <div className="node-reference-strip">
+        {caps?.supports_frames &&
+          referenceMode !== "reference" &&
+          (["start", "end"] as const).map((frame) =>
+            (frame === "start" ? startFrameId : endFrameId) ? null : (
+              <button
+                type="button"
+                className="node-reference-frame-slot"
+                key={frame}
+                disabled={disabled || uploading}
+                onClick={() => {
+                  setRole(frame);
+                  setOpen(true);
+                }}
+              >
+                <Icon name="plus" size={16} />
+                <span>{frame === "start" ? t("添加首帧") : t("添加尾帧")}</span>
+              </button>
+            ),
+          )}
         {selected.map((id) => {
           const asset = assets.find((candidate) => candidate.id === id);
           const selectedRole =
@@ -143,7 +167,13 @@ export function CanvasNodeReferenceBar({
           title={t("添加参考素材")}
           aria-expanded={open}
           disabled={disabled || uploading}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => {
+            if (!open && referenceMode === "frames")
+              setRole(
+                !startFrameId ? "start" : !endFrameId ? "end" : "reference",
+              );
+            setOpen((value) => !value);
+          }}
         >
           {uploading ? <Spinner /> : <Icon name="plus" size={19} />}
         </button>
@@ -169,7 +199,7 @@ export function CanvasNodeReferenceBar({
                 disabled={disabled}
                 onClick={() => {
                   setOpen(false);
-                  onPickReferences();
+                  onPickReferences(role);
                 }}
               >
                 <Icon name="cursor" size={14} />
@@ -267,12 +297,12 @@ export function CanvasNodeReferenceBar({
           ref={fileInput}
           type="file"
           multiple
-          accept="image/*,video/*,audio/*"
+          accept={role === "reference" ? "image/*,video/*,audio/*" : "image/*"}
           className="node-reference-file"
           aria-label={t("上传参考素材")}
           onChange={(event) => {
             if (event.target.files?.length)
-              onUploadReferences(event.target.files);
+              onUploadReferences(event.target.files, role);
             event.target.value = "";
             setOpen(false);
           }}

@@ -58,6 +58,9 @@ export function readGenerationDraft(
     ],
     startFrameId: (draft.startFrameId as string | undefined) ?? "",
     endFrameId: (draft.endFrameId as string | undefined) ?? "",
+    ...(draft.referenceMode === "reference" || draft.referenceMode === "frames"
+      ? { referenceMode: draft.referenceMode }
+      : {}),
     connectedAssetIds: [
       ...new Set((draft.connectedAssetIds as string[] | undefined) ?? []),
     ],
@@ -263,6 +266,9 @@ export function normalizeGenerationDraft(
     ],
     startFrameId: frames ? draft.startFrameId : "",
     endFrameId: frames ? draft.endFrameId : "",
+    ...(draft.referenceMode
+      ? { referenceMode: frames ? draft.referenceMode : ("reference" as const) }
+      : {}),
     connectedAssetIds: [...draft.connectedAssetIds],
   };
 }

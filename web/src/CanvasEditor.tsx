@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InfiniteCanvas } from "./components/canvas/infinite-canvas";
 import { CanvasNodePlaceholder } from "./components/canvas/canvas-node-placeholder";
 import { CanvasNodeHoverToolbar } from "./components/canvas/canvas-node-hover-toolbar";
+import type { ReferenceRole } from "./components/canvas/canvas-node-reference-bar";
 import { CanvasAppearance } from "./components/canvas/canvas-appearance";
 import { CanvasViewControls } from "./components/canvas/canvas-view-controls";
 import { CanvasGroupLabel } from "./components/canvas/canvas-group-label";
@@ -68,9 +69,16 @@ type Props = {
   onCompare?: (assets: Asset[]) => void;
   renderComposer?: (
     node: CanvasNodeData,
-    controls: { onPickReferences: () => void; onClose: () => void },
+    controls: {
+      onPickReferences: (role: ReferenceRole) => void;
+      onClose: () => void;
+    },
   ) => React.ReactNode;
-  onPickReference?: (targetNodeId: string, assetId: string) => void;
+  onPickReference?: (
+    targetNodeId: string,
+    assetId: string,
+    role: ReferenceRole,
+  ) => void;
 };
 export function CanvasEditor({
   graph,
@@ -107,9 +115,10 @@ export function CanvasEditor({
     } | null>(null),
     [preview, setPreview] = useState<Asset | null>(null),
     [composerNodeId, setComposerNodeId] = useState<string | null>(null),
-    [pickingReferenceFor, setPickingReferenceFor] = useState<string | null>(
-      null,
-    ),
+    [pickingReferenceFor, setPickingReferenceFor] = useState<{
+      nodeId: string;
+      role: ReferenceRole;
+    } | null>(null),
     [createMenu, setCreateMenu] = useState<{
       position: Position;
       connection?: ConnectionHandle;
@@ -947,6 +956,25 @@ export function CanvasEditor({
       ),
     });
   }
+  function canPickReferenceNode(node: CanvasNodeData) {
+    if (!pickingReferenceFor || node.id === pickingReferenceFor.nodeId)
+      return false;
+    const asset = assets.find((item) => item.id === node.metadata?.assetId);
+    return Boolean(
+      asset &&
+      (pickingReferenceFor.role === "reference" || asset.kind === "image"),
+    );
+  }
+  function pickReferenceNode(node: CanvasNodeData) {
+    if (!pickingReferenceFor || !canPickReferenceNode(node)) return;
+    onPickReference?.(
+      pickingReferenceFor.nodeId,
+      String(node.metadata!.assetId),
+      pickingReferenceFor.role,
+    );
+    setComposerNodeId(pickingReferenceFor.nodeId);
+    setPickingReferenceFor(null);
+  }
   return (
     <div
       className={`canvas-layout ${isNodeDragging ? "canvas-node-dragging" : ""}`}
@@ -1073,7 +1101,7 @@ export function CanvasEditor({
               <div
                 key={node.id}
                 data-node-id={node.id}
-                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${[CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Config].includes(node.type) ? "is-media-node" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${dropTargetGroupId === node.id ? "node-group-drop-target" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""} ${pickingReferenceFor && node.metadata?.assetId && node.id !== pickingReferenceFor ? "node-reference-pickable" : ""}`}
+                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${[CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Config].includes(node.type) ? "is-media-node" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${dropTargetGroupId === node.id ? "node-group-drop-target" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""} ${canPickReferenceNode(node) ? "node-reference-pickable" : ""}`}
                 style={{
                   left: node.position.x,
                   top: node.position.y,
@@ -1099,17 +1127,7 @@ export function CanvasEditor({
                   }
                   event.preventDefault();
                   event.stopPropagation();
-                  if (
-                    node.id !== pickingReferenceFor &&
-                    typeof node.metadata?.assetId === "string"
-                  ) {
-                    onPickReference?.(
-                      pickingReferenceFor,
-                      node.metadata.assetId,
-                    );
-                    setPickingReferenceFor(null);
-                    setComposerNodeId(pickingReferenceFor);
-                  }
+                  pickReferenceNode(node);
                 }}
                 tabIndex={0}
                 aria-label={node.title}
@@ -1120,16 +1138,8 @@ export function CanvasEditor({
                   )
                     return;
                   event.preventDefault();
-                  if (
-                    pickingReferenceFor &&
-                    node.id !== pickingReferenceFor &&
-                    typeof node.metadata?.assetId === "string"
-                  ) {
-                    onPickReference?.(
-                      pickingReferenceFor,
-                      node.metadata.assetId,
-                    );
-                    setPickingReferenceFor(null);
+                  if (pickingReferenceFor) {
+                    pickReferenceNode(node);
                     return;
                   }
                   setSelected([node.id]);
@@ -1505,10 +1515,10 @@ export function CanvasEditor({
             >
               {renderComposer(composerNode, {
                 onClose: () => setComposerNodeId(null),
-                onPickReferences: () => {
+                onPickReferences: (role) => {
                   cancelConnection();
                   setCreateMenu(null);
-                  setPickingReferenceFor(composerNode.id);
+                  setPickingReferenceFor({ nodeId: composerNode.id, role });
                   layout.current?.focus({ preventScroll: true });
                 },
               })}

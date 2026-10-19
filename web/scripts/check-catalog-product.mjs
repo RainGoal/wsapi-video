@@ -13,6 +13,20 @@ const pricingModule = ts.transpileModule(
   },
 ).outputText;
 const pricingURL = `data:text/javascript;base64,${Buffer.from(pricingModule).toString("base64")}`;
+const { estimateProductPrice } = await import(pricingURL);
+const durationsModule = ts.transpileModule(
+  fs.readFileSync(
+    new URL("../src/video-durations.ts", import.meta.url),
+    "utf8",
+  ),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+    },
+  },
+).outputText;
+const durationsURL = `data:text/javascript;base64,${Buffer.from(durationsModule).toString("base64")}`;
 const compiled = ts
   .transpileModule(
     fs.readFileSync(
@@ -26,7 +40,8 @@ const compiled = ts
       },
     },
   )
-  .outputText.replace('"../pricing"', JSON.stringify(pricingURL));
+  .outputText.replace('"../pricing"', JSON.stringify(pricingURL))
+  .replace('"../video-durations"', JSON.stringify(durationsURL));
 const {
   productCapabilities,
   productDefinitionChanged,
@@ -198,6 +213,58 @@ test("cleaning legacy video-only unsupported options requires re-verification", 
   assert.deepEqual(original.capabilities.sizes, ["1024x1024"]);
 });
 
+test("catalog range input saves existing duration arrays and rejects malformed entries", () => {
+  const original = product();
+  const lists = {
+    aspect_ratios: "16:9",
+    durations: "4-15",
+    resolutions: "720p,1080p",
+    sizes: "",
+    qualities: "",
+  };
+  const capabilities = productCapabilities(
+    "video",
+    original.capabilities,
+    lists,
+  );
+  assert.deepEqual(
+    capabilities.durations,
+    Array.from({ length: 12 }, (_, i) => i + 4),
+  );
+  assert.deepEqual(original.capabilities.durations, []);
+  for (const durations of ["5,10", "5，10"])
+    assert.deepEqual(
+      productCapabilities("video", original.capabilities, {
+        ...lists,
+        durations,
+      }).durations,
+      [5, 10],
+    );
+  for (const durations of [
+    "15-4",
+    "4-15,invalid",
+    "5,10.5",
+    "5,,10",
+    "0,5",
+    "4-601",
+  ])
+    assert.equal(
+      productCapabilities("video", original.capabilities, {
+        ...lists,
+        durations,
+      }),
+      null,
+      durations,
+    );
+  assert.deepEqual(
+    productCapabilities("image", original.capabilities, {
+      ...lists,
+      durations: "invalid",
+    }).durations,
+    [],
+  );
+});
+
 test("video pricing saves only selected resolutions and blank overrides use the default", () => {
   const overrides = { "720p": " 25 ", "1080p": "", "4k": "200" };
   const before = structuredClone(overrides);
@@ -260,6 +327,53 @@ test("resolution overrides require positive integer credits within the billing l
     billing_unit: "per_video",
     resolution_credits: {},
   });
+});
+
+test("per-request resolution prices stay fixed while per-second prices use requested duration", () => {
+  const overrides = { "720p": "30", "1080p": "50", "480p": "" };
+  const resolutions = ["480p", "720p", "1080p"];
+  const video = { ...product(), kind: "video", credits: 20 };
+  const fixed = productPricing("video", "per_video", resolutions, overrides);
+  const perSecond = productPricing(
+    "video",
+    "per_second",
+    resolutions,
+    overrides,
+  );
+  assert.deepEqual(fixed.resolution_credits, perSecond.resolution_credits);
+  assert.deepEqual(overrides, { "720p": "30", "1080p": "50", "480p": "" });
+  for (const duration of [4, 5, 10, 15]) {
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: fixed }, duration, "720p")
+        .total_credits,
+      30,
+    );
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: fixed }, duration, "1080p")
+        .total_credits,
+      50,
+    );
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: fixed }, duration, "480p")
+        .total_credits,
+      20,
+    );
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: perSecond }, duration, "720p")
+        .total_credits,
+      30 * duration,
+    );
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: perSecond }, duration, "1080p")
+        .total_credits,
+      50 * duration,
+    );
+    assert.equal(
+      estimateProductPrice({ ...video, pricing: perSecond }, duration, "480p")
+        .total_credits,
+      20 * duration,
+    );
+  }
 });
 
 test("saving per-second pricing validates every duration against default and resolution prices", () => {

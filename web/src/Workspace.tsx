@@ -4,6 +4,7 @@ import { api, ApiError, errorMessage, items } from "./api";
 import { useStudio } from "./App";
 import { AssetVisual, CanvasEditor } from "./CanvasEditor";
 import { Generate } from "./Generate";
+import type { ReferenceRole } from "./components/canvas/canvas-node-reference-bar";
 import { CandidateCompare } from "./CandidateCompare";
 import { AssetOrigin, AssetReferences } from "./AssetReferences";
 import { workspaceLocation, type WorkspaceView } from "./asset-references";
@@ -542,7 +543,11 @@ export function Workspace({
     notify(t("生成任务已受理，离开页面后仍会继续执行"));
     return true;
   }
-  function pickReference(targetId: string, assetId: string) {
+  function pickReference(
+    targetId: string,
+    assetId: string,
+    role: ReferenceRole = "reference",
+  ) {
     const current = graphRef.current;
     const liveGraph = reconcileGeneratedNodes(
       current,
@@ -567,8 +572,39 @@ export function Workspace({
       ]),
     ];
     const defaults = canvasGenerationDefaults(target);
+    if (
+      role !== "reference" &&
+      (defaults.kind !== "video" ||
+        assets.data.items.find((asset) => asset.id === assetId)?.kind !==
+          "image")
+    )
+      return;
     const selection = canvasReferenceSelection(target, connectedIds);
     const previous = readGenerationDraft(target.metadata?.generationDraft);
+    const startFrameId =
+      role === "start"
+        ? assetId
+        : selection.startFrameId === assetId
+          ? ""
+          : selection.startFrameId;
+    const endFrameId =
+      role === "end"
+        ? assetId
+        : selection.endFrameId === assetId
+          ? ""
+          : selection.endFrameId;
+    const safeStartFrameId =
+      role === "start"
+        ? assetId
+        : role === "end" && startFrameId === assetId
+          ? ""
+          : startFrameId;
+    const safeEndFrameId =
+      role === "end"
+        ? assetId
+        : role === "start" && endFrameId === assetId
+          ? ""
+          : endFrameId;
     const nextDraft: GenerationDraft = {
       kind: defaults.kind,
       productId: target.metadata?.productId || "",
@@ -580,11 +616,19 @@ export function Workspace({
       quality: "",
       audio: false,
       ...previous,
-      referenceIds: [...new Set([...selection.referenceIds, assetId])].filter(
-        (id) => id !== selection.startFrameId && id !== selection.endFrameId,
-      ),
-      startFrameId: selection.startFrameId,
-      endFrameId: selection.endFrameId,
+      ...(role !== "reference" ? { referenceMode: "frames" as const } : {}),
+      referenceIds: [
+        ...new Set(
+          [
+            ...selection.referenceIds,
+            selection.startFrameId,
+            selection.endFrameId,
+            assetId,
+          ].filter(Boolean),
+        ),
+      ].filter((id) => id !== safeStartFrameId && id !== safeEndFrameId),
+      startFrameId: safeStartFrameId,
+      endFrameId: safeEndFrameId,
       connectedAssetIds: [
         ...new Set([
           ...connectedIds,

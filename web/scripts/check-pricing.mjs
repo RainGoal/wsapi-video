@@ -90,6 +90,28 @@ test("per-second estimates follow requested duration and switching units never c
   );
 });
 
+test("every integer from 4 to 15 seconds preserves per-request prices and scales per-second prices", () => {
+  for (const billing_unit of ["per_video", "per_second"]) {
+    const offer = product({
+      billing_unit,
+      resolution_credits: { "720p": 25, "1080p": 50 },
+    });
+    for (let duration = 4; duration <= 15; duration++) {
+      for (const [resolution, unitCredits] of [
+        ["720p", 25],
+        ["1080p", 50],
+        ["4k", 10],
+      ]) {
+        const estimate = estimateProductPrice(offer, duration, resolution);
+        const quantity = billing_unit === "per_second" ? duration : 1;
+        assert.equal(estimate.unit_credits, unitCredits);
+        assert.equal(estimate.quantity, quantity);
+        assert.equal(estimate.total_credits, unitCredits * quantity);
+      }
+    }
+  }
+});
+
 test("integer bounds prevent invalid unit prices, durations and overflowing totals", () => {
   assert.equal(
     estimateProductPrice(product({ billing_unit: "per_frame" }), 5, "720p"),

@@ -213,6 +213,29 @@ test("model normalization retains supported settings and translates unsupported 
   assert.equal(original.startFrameId, "first");
 });
 
+test("empty frame-mode intent survives drafts and resets for unsupported models", () => {
+  const original = draft({
+    referenceMode: "frames",
+    startFrameId: "",
+    endFrameId: "",
+    referenceIds: [],
+  });
+  assert.equal(readGenerationDraft(original).referenceMode, "frames");
+  assert.equal(
+    normalizeGenerationDraft(original, product()).referenceMode,
+    "frames",
+  );
+  assert.equal(
+    normalizeGenerationDraft(original, product({ supports_frames: false }))
+      .referenceMode,
+    "reference",
+  );
+  assert.equal(
+    readGenerationDraft(draft({ referenceMode: "unknown" })).referenceMode,
+    undefined,
+  );
+});
+
 test("accepted tasks update media sources in place without replacing a later draft", () => {
   const source = node({
     metadata: {

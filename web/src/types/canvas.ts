@@ -22,6 +22,7 @@ export type GenerationDraft = {
   referenceIds: string[];
   startFrameId: string;
   endFrameId: string;
+  referenceMode?: "reference" | "frames";
   // Baseline for merging later canvas connections without restoring removed references.
   connectedAssetIds: string[];
 };

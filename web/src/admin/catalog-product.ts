@@ -5,6 +5,7 @@ import type {
   VideoBillingUnit,
 } from "../types";
 import { MAX_CREDITS, validCredits } from "../pricing";
+import { parseVideoDurations } from "../video-durations";
 
 export type CapabilityLists = Record<
   "aspect_ratios" | "durations" | "resolutions" | "sizes" | "qualities",
@@ -23,11 +24,14 @@ export function productCapabilities(
   kind: Product["kind"],
   capabilities: Capabilities,
   lists: CapabilityLists,
-): Capabilities {
+): Capabilities | null {
+  const durations =
+    kind === "video" ? parseVideoDurations(lists.durations) : [];
+  if (durations === null) return null;
   return {
     ...capabilities,
     aspect_ratios: split(lists.aspect_ratios),
-    durations: kind === "video" ? split(lists.durations).map(Number) : [],
+    durations,
     resolutions: kind === "video" ? split(lists.resolutions) : [],
     sizes: kind === "image" ? split(lists.sizes) : [],
     qualities: kind === "image" ? split(lists.qualities) : [],

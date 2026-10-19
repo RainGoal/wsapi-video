@@ -16,6 +16,11 @@ import {
 import type { CanvasNodeData, GenerationDraft } from "./types/canvas";
 import { CanvasNodePromptPanel } from "./components/canvas/canvas-node-prompt-panel";
 import { CanvasSelect } from "./components/canvas/canvas-select";
+import { CanvasVideoSettings } from "./components/canvas/canvas-video-settings";
+import {
+  changeVideoReferenceMode,
+  videoReferenceMode,
+} from "./video-references";
 import {
   CanvasNodeReferenceBar,
   type ReferenceRole,
@@ -76,7 +81,7 @@ export function Generate({
   ) => boolean | void;
   presentation?: "modal" | "inline";
   onDraftChange?: (draft: GenerationDraft) => void;
-  onPickReferences?: () => void;
+  onPickReferences?: (role: ReferenceRole) => void;
   onUploadReferences?: (files: FileList) => Promise<Asset[]>;
 }) {
   const { user, system, refreshWallet, navigate } = useStudio();
@@ -577,6 +582,7 @@ export function Generate({
     }
   }
   const caps = product?.capabilities;
+  const referenceMode = videoReferenceMode(draft, !!caps?.supports_frames);
   const selectedAssets = references.map((id) =>
     allAssets.find((asset) => asset.id === id),
   );
@@ -621,6 +627,7 @@ export function Generate({
   function selectReference(id: string, role: ReferenceRole) {
     setDraft((current) => ({
       ...current,
+      ...(role !== "reference" ? { referenceMode: "frames" as const } : {}),
       referenceIds:
         role === "reference"
           ? [...new Set([...current.referenceIds, id])]
@@ -639,7 +646,10 @@ export function Generate({
             : current.endFrameId,
     }));
   }
-  async function uploadReferences(files: FileList) {
+  async function uploadReferences(
+    files: FileList,
+    role: ReferenceRole = "reference",
+  ) {
     if (!onUploadReferences || locked || uploading) return;
     const uploadContext = context.current;
     setUploading(true);
@@ -648,15 +658,27 @@ export function Generate({
       const uploaded = await onUploadReferences(files);
       if (!live.current || context.current !== uploadContext) return;
       setUploadedAssets((current) => [...current, ...uploaded]);
-      setDraft((current) => ({
-        ...current,
-        referenceIds: [
-          ...new Set([
-            ...current.referenceIds,
-            ...uploaded.map((asset) => asset.id),
-          ]),
-        ],
-      }));
+      setDraft((current) => {
+        const frame =
+          role !== "reference" && caps?.supports_frames
+            ? uploaded.find((asset) => asset.kind === "image")?.id
+            : undefined;
+        return {
+          ...current,
+          ...(frame
+            ? {
+                referenceMode: "frames" as const,
+                [role === "start" ? "startFrameId" : "endFrameId"]: frame,
+              }
+            : {}),
+          referenceIds: [
+            ...new Set([
+              ...current.referenceIds,
+              ...uploaded.map((asset) => asset.id),
+            ]),
+          ].filter((id) => id !== frame),
+        };
+      });
     } catch (reason) {
       if (live.current && context.current === uploadContext)
         setError(errorMessage(reason));
@@ -724,82 +746,79 @@ export function Generate({
       )}
     </>
   );
-  const parameterFields = (
-    <>
-      <div className="parameter-grid generation-parameters">
-        <CanvasSelect
-          label={t("画面比例")}
-          value={ratio}
-          options={(caps?.aspect_ratios || []).map((value) => ({
-            value,
-            label: value,
-          }))}
-          onChange={setRatio}
-          disabled={locked}
-          placeholder={t("模型默认")}
-        />
-        <CanvasSelect
-          className={`generation-resolution${kind === "video" ? " video-resolution" : ""}`}
-          label={t("分辨率")}
-          value={kind === "image" ? size : resolution}
-          options={(
-            (kind === "image" ? caps?.sizes : caps?.resolutions) || []
-          ).map((value) => ({
-            value,
-            label: value.replace(/^(\d+)[xX](\d+)$/, "$1 × $2"),
-          }))}
-          onChange={kind === "image" ? setSize : setResolution}
-          disabled={locked}
-          placeholder={t("模型默认")}
-        />
-        {kind === "video" && !!caps?.durations?.length && (
+  const parameterFields =
+    kind === "video" ? (
+      <CanvasVideoSettings
+        key={product?.id || "video"}
+        productId={product?.id || ""}
+        caps={caps}
+        ratio={ratio}
+        resolution={resolution}
+        duration={duration}
+        audio={audio}
+        disabled={locked || !product}
+        price={displayedPrice}
+        referenceMode={referenceMode}
+        onRatioChange={setRatio}
+        onResolutionChange={setResolution}
+        onDurationChange={setDuration}
+        onAudioChange={setAudio}
+        onReferenceModeChange={(mode) =>
+          setDraft((current) =>
+            changeVideoReferenceMode(current, mode, allAssets),
+          )
+        }
+      />
+    ) : (
+      <>
+        <div className="parameter-grid generation-parameters">
           <CanvasSelect
-            label={t("视频时长")}
-            value={String(duration)}
-            options={caps.durations.map((value) => ({
-              value: String(value),
-              label: t("{0} 秒", value),
-            }))}
-            onChange={(value) => setDuration(Number(value))}
-            disabled={locked}
-          />
-        )}
-        {kind === "image" && !!caps?.qualities?.length && (
-          <CanvasSelect
-            label={t("质量")}
-            value={quality}
-            options={caps.qualities.map((value) => ({
+            label={t("画面比例")}
+            value={ratio}
+            options={(caps?.aspect_ratios || []).map((value) => ({
               value,
-              label:
-                (
-                  {
-                    auto: t("自动质量"),
-                    low: t("低质量"),
-                    medium: t("中等质量"),
-                    high: t("高质量"),
-                    standard: t("标准质量"),
-                  } as Record<string, string>
-                )[value] || value,
+              label: value,
             }))}
-            onChange={setQuality}
+            onChange={setRatio}
             disabled={locked}
+            placeholder={t("模型默认")}
           />
-        )}
-      </div>
-      {caps?.supports_audio && (
-        <label className="checkbox-label" title={t("生成原生音频")}>
-          <input
-            type="checkbox"
-            checked={audio}
+          <CanvasSelect
+            className="generation-resolution"
+            label={t("分辨率")}
+            value={size}
+            options={(caps?.sizes || []).map((value) => ({
+              value,
+              label: value.replace(/^(\d+)[xX](\d+)$/, "$1 × $2"),
+            }))}
+            onChange={setSize}
             disabled={locked}
-            aria-label={t("生成原生音频")}
-            onChange={(event) => setAudio(event.target.checked)}
+            placeholder={t("模型默认")}
           />
-          {presentation === "inline" ? t("音频") : t("生成原生音频")}
-        </label>
-      )}
-    </>
-  );
+          {!!caps?.qualities?.length && (
+            <CanvasSelect
+              label={t("质量")}
+              value={quality}
+              options={caps.qualities.map((value) => ({
+                value,
+                label:
+                  (
+                    {
+                      auto: t("自动质量"),
+                      low: t("低质量"),
+                      medium: t("中等质量"),
+                      high: t("高质量"),
+                      standard: t("标准质量"),
+                    } as Record<string, string>
+                  )[value] || value,
+              }))}
+              onChange={setQuality}
+              disabled={locked}
+            />
+          )}
+        </div>
+      </>
+    );
   if (presentation === "inline")
     return (
       <CanvasNodePromptPanel
@@ -818,6 +837,7 @@ export function Generate({
             startFrameId={startFrame}
             endFrameId={endFrame}
             caps={caps}
+            referenceMode={referenceMode}
             disabled={locked}
             uploading={uploading}
             onRemove={removeReference}
@@ -825,7 +845,7 @@ export function Generate({
             onPickReferences={onPickReferences}
             onUploadReferences={
               onUploadReferences
-                ? (files) => void uploadReferences(files)
+                ? (files, role) => void uploadReferences(files, role)
                 : undefined
             }
           />

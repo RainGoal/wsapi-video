@@ -7,7 +7,11 @@ import type {
   Product,
   VideoBillingUnit,
 } from "../types";
-import { productBillingUnit, validCredits } from "../pricing";
+import {
+  estimateProductPrice,
+  productBillingUnit,
+  validCredits,
+} from "../pricing";
 import {
   productCapabilities,
   productDefinitionChanged,
@@ -230,7 +234,11 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
                         ? a("类型 / 能力", "Type / capabilities")
                         : a("金额", "Price")}
                     </th>
-                    <th>{a("积分", "Credits")}</th>
+                    <th>
+                      {kind === "products"
+                        ? a("默认单价", "Default unit price")
+                        : a("积分", "Credits")}
+                    </th>
                     <th>{a("发布状态", "Publication")}</th>
                     <th>{a("版本", "Version")}</th>
                     <th>{a("操作", "Actions")}</th>
@@ -278,6 +286,10 @@ export function CatalogPage({ kind }: { kind: "products" | "tiers" }) {
                             "per_second"
                               ? a("积分 / 秒", "credits / second")
                               : a("积分 / 次", "credits / generation")}
+                            {row.kind === "video" &&
+                              productBillingUnit(row as AdminProduct) ===
+                                "per_video" &&
+                              a(" · 与时长无关", " · duration independent")}
                             {Object.keys(
                               (row as AdminProduct).pricing
                                 ?.resolution_credits || {},
@@ -524,10 +536,42 @@ function ProductForm({
     draft.capabilities,
     lists,
   );
-  const definitionChanged = productDefinitionChanged(initial, {
-    ...draft,
-    capabilities,
-  });
+  const definitionChanged =
+    !capabilities ||
+    productDefinitionChanged(initial, { ...draft, capabilities });
+  const resolutions = pricingResolutions(lists.resolutions.split(/[,，\n]/));
+  const durationError = a(
+    "填写 1–600 的整数秒，例如 4-15 或 5, 10；范围须从小到大，最多 64 个可选时长。",
+    "Use integer seconds from 1 to 600, e.g. 4-15 or 5, 10. Ranges must be ascending, with at most 64 duration options.",
+  );
+  const previewDuration = capabilities?.durations[0] || 0;
+  function pricePreview(resolution: string) {
+    const pricing = productPricing(
+      draft.kind,
+      billingUnit,
+      resolutions,
+      priceOverrides,
+    );
+    const price =
+      pricing === null
+        ? null
+        : estimateProductPrice(
+            { ...draft, pricing },
+            previewDuration,
+            resolution,
+          );
+    if (!price)
+      return a("填写有效价格与时长后显示", "Enter valid prices and duration");
+    return price.billing_unit === "per_second"
+      ? a(
+          `${price.unit_credits} 积分/秒 × ${previewDuration} 秒 = ${price.total_credits} 积分`,
+          `${price.unit_credits} credits/s × ${previewDuration}s = ${price.total_credits} credits`,
+        )
+      : a(
+          `${price.total_credits} 积分/次 · 与时长无关`,
+          `${price.total_credits} credits/video · any supported duration`,
+        );
+  }
   const verified = !definitionChanged && draft.verified;
   const active = verified && draft.active;
   function cap(key: keyof Capabilities | LimitKey, value: unknown) {
@@ -537,7 +581,11 @@ function ProductForm({
     }));
   }
   const list = (key: keyof typeof lists, label: string, hint: string) => (
-    <Field label={label} hint={hint}>
+    <Field
+      label={label}
+      hint={hint}
+      error={key === "durations" && !capabilities ? durationError : undefined}
+    >
       <input
         value={lists[key]}
         onChange={(e) => setLists((old) => ({ ...old, [key]: e.target.value }))}
@@ -551,6 +599,7 @@ function ProductForm({
     setError("");
     setBusy(true);
     try {
+      if (!capabilities) throw new Error(durationError);
       const pricing = productPricing(
         draft.kind,
         billingUnit,
@@ -720,8 +769,8 @@ function ProductForm({
                 "durations",
                 a("视频时长（秒）", "Video durations (seconds)"),
                 a(
-                  "整数秒，逗号分隔，例如 5, 10",
-                  "Integer seconds separated by commas, e.g. 5, 10",
+                  "连续秒数填 4-15；固定档位填 5, 10。最多 64 个可选时长，仅填写该模型真实支持的值。",
+                  "Use 4-15 for every second in a range, or 5, 10 for fixed options. Enter at most 64 duration options supported by this model.",
                 ),
               )}
               {list(
@@ -751,12 +800,18 @@ function ProductForm({
             </h3>
             <p className="muted">
               {a(
-                "同一模型统一计费单位。按秒使用用户选择的请求时长，切换单位不会自动换算价格。这里配置零售积分，与上游美元成本独立。",
-                "One billing unit applies to the whole model. Per-second billing uses the requested duration; switching units does not convert prices. These retail credits are independent of upstream USD costs.",
+                "按次：每次请求收取所选分辨率的固定积分，与视频时长无关。按秒：所选分辨率的每秒积分 × 请求秒数。",
+                "Per video: charge a fixed price for the selected resolution, regardless of duration. Per second: multiply the resolution's credits per second by the requested duration.",
               )}
             </p>
             <div className="admin-form-grid">
-              <Field label={a("视频计费方式", "Video billing unit")}>
+              <Field
+                label={a("视频计费方式", "Video billing unit")}
+                hint={a(
+                  "切换单位不会自动换算已填价格，请重新核对默认价和各分辨率单价。零售积分与上游成本独立。",
+                  "Switching units keeps the entered numbers. Review the default and resolution prices. Retail credits are independent of upstream costs.",
+                )}
+              >
                 <select
                   value={billingUnit}
                   onChange={(e) =>
@@ -764,7 +819,10 @@ function ProductForm({
                   }
                 >
                   <option value="per_video">
-                    {a("按次（每条视频）", "Per video")}
+                    {a(
+                      "按次（每次请求固定积分）",
+                      "Per video (fixed per request)",
+                    )}
                   </option>
                   <option value="per_second">
                     {a("按秒（请求时长）", "Per requested second")}
@@ -795,7 +853,11 @@ function ProductForm({
                 />
               </Field>
             </div>
-            {pricingResolutions(capabilities.resolutions).length ? (
+            <Notice>
+              {a("默认价预览：", "Default price: ")}
+              {pricePreview("")}
+            </Notice>
+            {resolutions.length ? (
               <div className="table-wrap admin-table">
                 <table>
                   <thead>
@@ -803,66 +865,69 @@ function ProductForm({
                       <th>{a("分辨率", "Resolution")}</th>
                       <th>
                         {billingUnit === "per_second"
-                          ? a("覆盖积分 / 秒", "Override credits / second")
-                          : a("覆盖积分 / 次", "Override credits / video")}
+                          ? a("该分辨率每秒积分", "Credits per second")
+                          : a(
+                              "该分辨率每次固定积分",
+                              "Fixed credits per request",
+                            )}
                       </th>
+                      <th>{a("计费预览", "Price preview")}</th>
                       <th>{a("操作", "Actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pricingResolutions(capabilities.resolutions).map(
-                      (resolution) => {
-                        const value = Object.hasOwn(priceOverrides, resolution)
-                          ? priceOverrides[resolution]
-                          : "";
-                        return (
-                          <tr key={resolution}>
-                            <th scope="row" className="mono">
-                              {resolution}
-                            </th>
-                            <td>
-                              <input
-                                aria-label={a(
-                                  `${resolution} 覆盖积分`,
-                                  `${resolution} override credits`,
-                                )}
-                                type="number"
-                                min={1}
-                                max={1000000000}
-                                step={1}
-                                placeholder={String(draft.credits)}
-                                value={value}
-                                onChange={(e) =>
-                                  setPriceOverrides((old) => ({
-                                    ...old,
-                                    [resolution]: e.target.value,
-                                  }))
-                                }
-                              />
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                className="button subtle small"
-                                disabled={!value}
-                                aria-label={a(
-                                  `${resolution} 使用默认价`,
-                                  `Use default price for ${resolution}`,
-                                )}
-                                onClick={() =>
-                                  setPriceOverrides((old) => ({
-                                    ...old,
-                                    [resolution]: "",
-                                  }))
-                                }
-                              >
-                                {a("使用默认价", "Use default")}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      },
-                    )}
+                    {resolutions.map((resolution) => {
+                      const value = Object.hasOwn(priceOverrides, resolution)
+                        ? priceOverrides[resolution]
+                        : "";
+                      return (
+                        <tr key={resolution}>
+                          <th scope="row" className="mono">
+                            {resolution}
+                          </th>
+                          <td>
+                            <input
+                              aria-label={a(
+                                `${resolution} 覆盖积分`,
+                                `${resolution} override credits`,
+                              )}
+                              type="number"
+                              min={1}
+                              max={1000000000}
+                              step={1}
+                              placeholder={String(draft.credits)}
+                              value={value}
+                              onChange={(e) =>
+                                setPriceOverrides((old) => ({
+                                  ...old,
+                                  [resolution]: e.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>{pricePreview(resolution)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="button subtle small"
+                              disabled={!value}
+                              aria-label={a(
+                                `${resolution} 使用默认价`,
+                                `Use default price for ${resolution}`,
+                              )}
+                              onClick={() =>
+                                setPriceOverrides((old) => ({
+                                  ...old,
+                                  [resolution]: "",
+                                }))
+                              }
+                            >
+                              {a("使用默认价", "Use default")}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

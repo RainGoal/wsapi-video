@@ -65,6 +65,36 @@ func TestProductPriceUsesNormalizedInputDefaults(t *testing.T) {
 	}
 }
 
+func TestProductPriceFourToFifteenSecondsRespectsBillingUnit(t *testing.T) {
+	for _, unit := range []string{"per_video", "per_second"} {
+		p := pricedVideoFixture(unit)
+		p.Capabilities.Durations = nil
+		for duration := 4; duration <= 15; duration++ {
+			p.Capabilities.Durations = append(p.Capabilities.Durations, duration)
+		}
+		for _, resolution := range []string{"720p", "1080p", "4k"} {
+			for duration := 4; duration <= 15; duration++ {
+				in := QuoteInput{ProjectID: "project", ProductID: p.ID, Prompt: "test", Duration: duration, Resolution: resolution}
+				if err := validateInput(&in, p); err != nil {
+					t.Fatal("configured integer duration was rejected", duration, err)
+				}
+				unitCredits := p.Credits
+				if resolution == "1080p" {
+					unitCredits = 13
+				}
+				quantity := int64(1)
+				if unit == "per_second" {
+					quantity = int64(duration)
+				}
+				credits, detail, err := calculateProductPrice(p, in)
+				if err != nil || detail == nil || credits != unitCredits*quantity || detail.UnitCredits != unitCredits || detail.Quantity != quantity {
+					t.Fatalf("%s %s %ds has incorrect price: %d %+v %v", unit, resolution, duration, credits, detail, err)
+				}
+			}
+		}
+	}
+}
+
 func TestProductPricingRejectsInvalidConfiguration(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

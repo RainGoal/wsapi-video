@@ -283,6 +283,26 @@
   border-color: var(--amber);
   color: var(--amber);
 }
+.node-reference-frame-slot {
+  width: 64px;
+  height: 60px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 10px;
+}
+.node-reference-frame-slot:hover,
+.node-reference-frame-slot:focus-visible {
+  border-color: var(--amber);
+  color: var(--amber);
+}
 .node-reference-empty {
   max-width: 165px;
   font-size: 11px;
