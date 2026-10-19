@@ -3,6 +3,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type AriaRole,
+  type KeyboardEventHandler,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -15,6 +17,10 @@ export function CanvasPopover({
   width,
   className,
   label,
+  role = "group",
+  id,
+  initialFocusSelector,
+  onKeyDown,
   onClose,
   children,
 }: {
@@ -22,6 +28,10 @@ export function CanvasPopover({
   width: number;
   className: string;
   label?: string;
+  role?: AriaRole;
+  id?: string;
+  initialFocusSelector?: string;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -90,7 +100,8 @@ export function CanvasPopover({
     document.addEventListener("pointerdown", outside, true);
     popup.current
       ?.querySelector<HTMLElement>(
-        "button:not(:disabled),input:not(:disabled),select:not(:disabled)",
+        initialFocusSelector ??
+          "button:not(:disabled),input:not(:disabled),select:not(:disabled)",
       )
       ?.focus({ preventScroll: true });
     return () => {
@@ -99,12 +110,13 @@ export function CanvasPopover({
       window.removeEventListener("scroll", reposition, true);
       document.removeEventListener("pointerdown", outside, true);
     };
-  }, [anchor]);
+  }, [anchor, initialFocusSelector]);
   return createPortal(
     <div
       ref={popup}
+      id={id}
       className={className}
-      role="group"
+      role={role}
       aria-label={label}
       data-canvas-no-zoom
       data-canvas-theme={theme}
@@ -120,7 +132,9 @@ export function CanvasPopover({
       onDoubleClick={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
-        event.stopPropagation();
+        if (event.key !== "Tab") event.stopPropagation();
+        onKeyDown?.(event);
+        if (event.defaultPrevented) return;
         if (event.key === "Escape") {
           event.preventDefault();
           close.current();

@@ -4,6 +4,7 @@ import { t } from "../../i18n";
 import type { Asset, Capabilities } from "../../types";
 import { Icon, Spinner } from "../../ui";
 import { CanvasPopover } from "./canvas-popover";
+import { CanvasSelect } from "./canvas-select";
 
 export type ReferenceRole = "reference" | "start" | "end";
 
@@ -117,18 +118,18 @@ export function CanvasNodeReferenceBar({
                 <Icon name="close" size={11} />
               </button>
               {caps?.supports_frames && asset?.kind === "image" ? (
-                <select
-                  aria-label={t("参考角色 {0}", asset.file_name)}
+                <CanvasSelect
+                  className="node-reference-role-select"
+                  label={t("参考角色 {0}", asset.file_name)}
                   value={selectedRole}
-                  onChange={(event) =>
-                    onSelect(id, event.target.value as ReferenceRole)
-                  }
+                  onChange={(value) => onSelect(id, value as ReferenceRole)}
                   disabled={disabled}
-                >
-                  <option value="reference">{t("参考")}</option>
-                  <option value="start">{t("首帧")}</option>
-                  <option value="end">{t("尾帧")}</option>
-                </select>
+                  options={[
+                    { value: "reference", label: t("参考") },
+                    { value: "start", label: t("首帧") },
+                    { value: "end", label: t("尾帧") },
+                  ]}
+                />
               ) : (
                 <span className="node-reference-role">{t("参考")}</span>
               )}

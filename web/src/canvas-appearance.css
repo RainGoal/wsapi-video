@@ -3,7 +3,7 @@
 :is(
   .canvas-layout,
   .canvas-appearance-popover,
-  .node-composer-settings-popover,
+  .canvas-select-menu,
   .node-reference-popover
 )[data-canvas-theme] {
   --bg: #151718;
@@ -32,7 +32,7 @@
 :is(
   .canvas-layout,
   .canvas-appearance-popover,
-  .node-composer-settings-popover,
+  .canvas-select-menu,
   .node-reference-popover
 )[data-canvas-theme="light"] {
   --bg: #f4f3ef;
@@ -404,11 +404,6 @@
   background: var(--panel);
   box-shadow: var(--canvas-panel-shadow);
 }
-.canvas-layout[data-canvas-theme] .node-composer-controls > select {
-  color: var(--text);
-  border-color: var(--line);
-  background: var(--panel-light);
-}
 .canvas-layout[data-canvas-theme] .node-composer-prompt,
 .canvas-layout[data-canvas-theme] .node-composer-prompt:focus {
   color: var(--text);
@@ -430,27 +425,22 @@
 .canvas-layout[data-canvas-theme] .node-reference-remove {
   border-color: var(--line);
 }
-:is(
-  .node-composer-settings-popover,
-  .node-reference-popover
-)[data-canvas-theme] {
+.node-reference-popover[data-canvas-theme] {
   border-color: var(--line);
   color: var(--text);
   background: var(--panel);
   box-shadow: var(--canvas-panel-shadow);
 }
-:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
-  :is(input, select, textarea) {
+.node-reference-popover[data-canvas-theme] :is(input, select, textarea) {
   border-color: var(--line);
   color: var(--text);
   background: var(--panel-light);
 }
-:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
+.node-reference-popover[data-canvas-theme]
   :is(label, .checkbox-label, .field-hint) {
   color: var(--muted);
 }
-:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
-  .button {
+.node-reference-popover[data-canvas-theme] .button {
   border-color: var(--line);
   color: var(--text);
   background: var(--panel-light);

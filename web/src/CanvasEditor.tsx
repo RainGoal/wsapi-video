@@ -875,7 +875,7 @@ export function CanvasEditor({
     activeNode?.id === composerNodeId && !pickingReferenceFor
       ? activeNode
       : undefined;
-  const composerWidth = Math.min(520, Math.max(0, stageSize.width - 24));
+  const composerWidth = Math.min(680, Math.max(0, stageSize.width - 24));
   const composerPosition = composerNode
     ? placeCanvasComposer(
         composerNode,

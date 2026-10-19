@@ -1,10 +1,11 @@
 import { t } from "./i18n";
 import "./creation.css";
 import { useEffect, useRef, useState, type SetStateAction } from "react";
-import { api, ApiError, errorMessage, items } from "./api";
+import { api, ApiError, errorMessage, items, sessionVersion } from "./api";
 import { useStudio } from "./App";
 import type { Asset, PricingBreakdown, Product, Quote, Task } from "./types";
 import { estimateProductPrice } from "./pricing";
+import { validGenerationQuote } from "./generation-quote";
 import {
   canvasGenerationDefaults,
   canvasReferenceSelection,
@@ -14,6 +15,7 @@ import {
 } from "./creation";
 import type { CanvasNodeData, GenerationDraft } from "./types/canvas";
 import { CanvasNodePromptPanel } from "./components/canvas/canvas-node-prompt-panel";
+import { CanvasSelect } from "./components/canvas/canvas-select";
 import {
   CanvasNodeReferenceBar,
   type ReferenceRole,
@@ -167,15 +169,19 @@ export function Generate({
       task?: Task;
       recovered: boolean;
     } | null>(null);
-  const requestKey = useRef("");
+  const quoteInput = useRef("");
   const busyRef = useRef(false);
   const initializedReferences = useRef(
     Boolean(storedDraft || initialSelection.restored),
   );
   const live = useRef(true);
-  const context = useRef({ id: node?.id, revision: 0 });
-  if (context.current.id !== node?.id)
-    context.current = { id: node?.id, revision: context.current.revision + 1 };
+  const context = useRef({ id: node?.id, projectId, userId: user.id });
+  if (
+    context.current.id !== node?.id ||
+    context.current.projectId !== projectId ||
+    context.current.userId !== user.id
+  )
+    context.current = { id: node?.id, projectId, userId: user.id };
   const recoveryKey = submissionRecoveryKey(user.id, projectId);
   const storageFailure = () =>
     t(
@@ -255,8 +261,13 @@ export function Generate({
       : "";
   const latestQuoteInput = useRef("");
   latestQuoteInput.current = JSON.stringify([
+    user.id,
+    projectId,
+    incomingSnapshot,
     product?.id,
     product?.version,
+    product?.credits,
+    product?.pricing,
     prompt,
     kind,
     duration,
@@ -269,6 +280,18 @@ export function Generate({
     startFrame,
     endFrame,
   ]);
+  const displayedCredits =
+    quote && quoteInput.current === latestQuoteInput.current
+      ? quote.credits
+      : priceEstimate?.total_credits;
+  const displayedPrice =
+    quote && quoteInput.current === latestQuoteInput.current
+      ? quote.pricing
+      : priceEstimate;
+  const generationLabel =
+    displayedCredits === undefined
+      ? t("生成")
+      : t("生成 · {0} 积分", displayedCredits.toLocaleString());
   useEffect(() => {
     if (!product) return;
     const initializeReferences = !initializedReferences.current;
@@ -318,7 +341,7 @@ export function Generate({
   }, [draft, product]);
   useEffect(() => {
     setQuote(null);
-    requestKey.current = "";
+    quoteInput.current = "";
     setError("");
   }, [
     kind,
@@ -337,46 +360,10 @@ export function Generate({
     startFrame,
     endFrame,
   ]);
-  async function getQuote() {
-    if (!product || !priceEstimate || busyRef.current || locked) return;
-    busyRef.current = true;
-    const submittedContext = context.current;
-    const submittedInput = latestQuoteInput.current;
-    setBusy(true);
-    setError("");
-    try {
-      const next = await api<Quote>("/quotes", "POST", {
-        project_id: projectId,
-        product_id: product.id,
-        prompt,
-        ...(ratio ? { aspect_ratio: ratio } : {}),
-        ...(duration && kind === "video" ? { duration } : {}),
-        ...(resolution ? { resolution } : {}),
-        ...(kind === "image" && size ? { size } : {}),
-        ...(kind === "image" && quality ? { quality } : {}),
-        ...(product.capabilities.supports_audio ? { audio } : {}),
-        reference_asset_ids: references,
-        ...(startFrame ? { start_frame_asset_id: startFrame } : {}),
-        ...(endFrame ? { end_frame_asset_id: endFrame } : {}),
-      });
-      if (!live.current || context.current !== submittedContext) return;
-      if (latestQuoteInput.current !== submittedInput) {
-        setError(t("输入已更改，请重新获取当前参数的报价。"));
-        return;
-      }
-      setQuote(next);
-      requestKey.current = crypto.randomUUID();
-    } catch (reason) {
-      if (live.current && context.current === submittedContext)
-        setError(errorMessage(reason));
-    } finally {
-      busyRef.current = false;
-      if (live.current && context.current === submittedContext) setBusy(false);
-    }
-  }
   async function finishConfirmed(
     result: NonNullable<typeof settled>,
     confirmedContext = context.current,
+    confirmedSession = sessionVersion(),
   ) {
     let completed = false;
     try {
@@ -387,11 +374,15 @@ export function Generate({
           result.payload,
           () =>
             result.task
-              ? onCreated(
-                  result.task,
-                  result.recovered,
-                  result.payload.source_node_id,
-                )
+              ? sessionVersion() === confirmedSession &&
+                context.current.userId === confirmedContext.userId &&
+                context.current.projectId === confirmedContext.projectId
+                ? onCreated(
+                    result.task,
+                    result.recovered,
+                    result.payload.source_node_id,
+                  )
+                : false
               : undefined,
         );
       });
@@ -413,7 +404,7 @@ export function Generate({
       setSettled(null);
       setStorageError("");
       setQuote(null);
-      requestKey.current = "";
+      quoteInput.current = "";
     }
     if (result.task) refreshWallet();
   }
@@ -433,47 +424,114 @@ export function Generate({
     if (
       !recoveryReady ||
       storageError ||
-      (!quote && !retry) ||
-      (recovery && !retry)
+      (recovery && !retry) ||
+      (!retry && (actionDisabled || !product || !priceEstimate))
     )
       return;
-    const payload = retry || {
-      quote_id: quote!.id,
-      request_key: requestKey.current || crypto.randomUUID(),
-      ...(node?.id ? { source_node_id: node.id } : {}),
-    };
     const submittedContext = context.current;
+    const submittedSession = sessionVersion();
+    const submittedInput = latestQuoteInput.current;
+    const expectedCredits = displayedCredits;
+    const isCurrent = () =>
+      live.current &&
+      context.current === submittedContext &&
+      sessionVersion() === submittedSession;
+    let payload = retry;
+    let freshQuote: Quote | undefined;
+    let recorded = false;
+    let taskSent = false;
     busyRef.current = true;
-    setBusy(true);
-    try {
-      await withSubmissionRecoveryLock(navigator.locks, recoveryKey, () =>
-        persistPendingSubmission(localStorage, recoveryKey, payload),
-      );
-    } catch {
-      busyRef.current = false;
-      if (live.current && context.current === submittedContext) {
-        setBusy(false);
-        reloadRecovery();
-        setStorageError(
-          navigator.locks
-            ? storageFailure()
-            : t(
-                "当前浏览器无法安全保护跨标签提交。请使用支持 Web Locks 的新版浏览器，并通过 HTTPS 或本机地址访问。",
-              ),
-        );
-      }
-      return;
-    }
-    if (!live.current || context.current !== submittedContext) {
-      busyRef.current = false;
-      return;
-    }
-    window.dispatchEvent(new Event("frame:submission-recovery"));
-    setRecovery(payload);
     setBusy(true);
     setError("");
     setInsufficient(false);
     try {
+      if (!payload) {
+        const next = await api<unknown>("/quotes", "POST", {
+          project_id: projectId,
+          product_id: product!.id,
+          prompt,
+          ...(ratio ? { aspect_ratio: ratio } : {}),
+          ...(duration && kind === "video" ? { duration } : {}),
+          ...(resolution ? { resolution } : {}),
+          ...(kind === "image" && size ? { size } : {}),
+          ...(kind === "image" && quality ? { quality } : {}),
+          ...(product!.capabilities.supports_audio ? { audio } : {}),
+          reference_asset_ids: references,
+          ...(startFrame ? { start_frame_asset_id: startFrame } : {}),
+          ...(endFrame ? { end_frame_asset_id: endFrame } : {}),
+        });
+        if (!isCurrent()) return;
+        if (latestQuoteInput.current !== submittedInput) {
+          setError(t("输入已更改，请重新点击生成。"));
+          return;
+        }
+        if (!validGenerationQuote(next, product!.id))
+          throw new ApiError(
+            200,
+            "invalid_response",
+            t("服务端未返回有效生成价格，请重试。"),
+          );
+        freshQuote = next;
+        quoteInput.current = submittedInput;
+        setQuote(next);
+        if (next.credits !== expectedCredits) {
+          setError(
+            t("价格已更新为 {0} 积分，请再次点击生成确认。", next.credits),
+          );
+          return;
+        }
+        payload = {
+          quote_id: next.id,
+          request_key: crypto.randomUUID(),
+          ...(node?.id ? { source_node_id: node.id } : {}),
+        };
+      }
+      const pending = payload;
+      let preflightError = "";
+      try {
+        await withSubmissionRecoveryLock(navigator.locks, recoveryKey, () => {
+          if (!isCurrent()) return;
+          if (!retry && latestQuoteInput.current !== submittedInput) {
+            preflightError = t("输入已更改，请重新点击生成。");
+            return;
+          }
+          if (!retry && !validGenerationQuote(freshQuote, product!.id)) {
+            preflightError = t("生成价格已失效，请重新点击生成。");
+            return;
+          }
+          persistPendingSubmission(localStorage, recoveryKey, pending);
+          recorded = true;
+        });
+      } catch {
+        if (isCurrent()) {
+          reloadRecovery();
+          setStorageError(
+            navigator.locks
+              ? storageFailure()
+              : t(
+                  "当前浏览器无法安全保护跨标签提交。请使用支持 Web Locks 的新版浏览器，并通过 HTTPS 或本机地址访问。",
+                ),
+          );
+        }
+        return;
+      }
+      if (!recorded) {
+        if (isCurrent() && preflightError) setError(preflightError);
+        return;
+      }
+      if (!isCurrent()) return;
+      if (
+        !retry &&
+        (latestQuoteInput.current !== submittedInput ||
+          !validGenerationQuote(freshQuote, product!.id))
+      ) {
+        await finishConfirmed({ payload, recovered: false }, submittedContext);
+        if (isCurrent()) setError(t("输入或生成价格已更改，请重新点击生成。"));
+        return;
+      }
+      window.dispatchEvent(new Event("frame:submission-recovery"));
+      setRecovery(payload);
+      taskSent = true;
       const task = await api<unknown>("/tasks", "POST", {
         quote_id: payload.quote_id,
         request_key: payload.request_key,
@@ -489,9 +547,15 @@ export function Generate({
       await finishConfirmed(
         { payload, task, recovered: Boolean(retry) },
         submittedContext,
+        submittedSession,
       );
     } catch (reason) {
-      if (!live.current || context.current !== submittedContext) return;
+      if (!isCurrent()) return;
+      if (!recorded || !taskSent || !payload) {
+        setInsufficient(reason instanceof ApiError && reason.status === 402);
+        setError(errorMessage(reason));
+        return;
+      }
       const rejected =
         reason instanceof ApiError &&
         submissionWasRejected(reason.status, reason.code, Boolean(retry));
@@ -509,7 +573,7 @@ export function Generate({
       );
     } finally {
       busyRef.current = false;
-      if (live.current && context.current === submittedContext) setBusy(false);
+      if (live.current) setBusy(false);
     }
   }
   const caps = product?.capabilities;
@@ -660,6 +724,82 @@ export function Generate({
       )}
     </>
   );
+  const parameterFields = (
+    <>
+      <div className="parameter-grid generation-parameters">
+        <CanvasSelect
+          label={t("画面比例")}
+          value={ratio}
+          options={(caps?.aspect_ratios || []).map((value) => ({
+            value,
+            label: value,
+          }))}
+          onChange={setRatio}
+          disabled={locked}
+          placeholder={t("模型默认")}
+        />
+        <CanvasSelect
+          className={`generation-resolution${kind === "video" ? " video-resolution" : ""}`}
+          label={t("分辨率")}
+          value={kind === "image" ? size : resolution}
+          options={(
+            (kind === "image" ? caps?.sizes : caps?.resolutions) || []
+          ).map((value) => ({
+            value,
+            label: value.replace(/^(\d+)[xX](\d+)$/, "$1 × $2"),
+          }))}
+          onChange={kind === "image" ? setSize : setResolution}
+          disabled={locked}
+          placeholder={t("模型默认")}
+        />
+        {kind === "video" && !!caps?.durations?.length && (
+          <CanvasSelect
+            label={t("视频时长")}
+            value={String(duration)}
+            options={caps.durations.map((value) => ({
+              value: String(value),
+              label: t("{0} 秒", value),
+            }))}
+            onChange={(value) => setDuration(Number(value))}
+            disabled={locked}
+          />
+        )}
+        {kind === "image" && !!caps?.qualities?.length && (
+          <CanvasSelect
+            label={t("质量")}
+            value={quality}
+            options={caps.qualities.map((value) => ({
+              value,
+              label:
+                (
+                  {
+                    auto: t("自动质量"),
+                    low: t("低质量"),
+                    medium: t("中等质量"),
+                    high: t("高质量"),
+                    standard: t("标准质量"),
+                  } as Record<string, string>
+                )[value] || value,
+            }))}
+            onChange={setQuality}
+            disabled={locked}
+          />
+        )}
+      </div>
+      {caps?.supports_audio && (
+        <label className="checkbox-label" title={t("生成原生音频")}>
+          <input
+            type="checkbox"
+            checked={audio}
+            disabled={locked}
+            aria-label={t("生成原生音频")}
+            onChange={(event) => setAudio(event.target.checked)}
+          />
+          {presentation === "inline" ? t("音频") : t("生成原生音频")}
+        </label>
+      )}
+    </>
+  );
   if (presentation === "inline")
     return (
       <CanvasNodePromptPanel
@@ -671,13 +811,6 @@ export function Generate({
         onPromptChange={setPrompt}
         onProductChange={setProductId}
         onClose={onClose}
-        parameterSummary={[
-          ratio,
-          resolution || size,
-          kind === "video" && duration ? t("{0} 秒", duration) : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
         references={
           <CanvasNodeReferenceBar
             assets={allAssets}
@@ -697,120 +830,18 @@ export function Generate({
             }
           />
         }
-        parameters={
-          <>
-            <div className="parameter-grid">
-              {caps?.aspect_ratios?.length ? (
-                <label>
-                  {t("画面比例")}
-                  <select
-                    disabled={locked}
-                    value={ratio}
-                    onChange={(event) => setRatio(event.target.value)}
-                  >
-                    {caps.aspect_ratios.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {kind === "video" && caps?.durations?.length ? (
-                <label>
-                  {t("视频时长")}
-                  <select
-                    disabled={locked}
-                    value={duration}
-                    onChange={(event) =>
-                      setDuration(Number(event.target.value))
-                    }
-                  >
-                    {caps.durations.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                        {t("秒")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {caps?.resolutions?.length ? (
-                <label>
-                  {t("分辨率")}
-                  <select
-                    disabled={locked}
-                    value={resolution}
-                    onChange={(event) => setResolution(event.target.value)}
-                  >
-                    {caps.resolutions.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {kind === "image" && caps?.sizes?.length ? (
-                <label>
-                  {t("尺寸")}
-                  <select
-                    disabled={locked}
-                    value={size}
-                    onChange={(event) => setSize(event.target.value)}
-                  >
-                    {caps.sizes.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {kind === "image" && caps?.qualities?.length ? (
-                <label>
-                  {t("质量")}
-                  <select
-                    disabled={locked}
-                    value={quality}
-                    onChange={(event) => setQuality(event.target.value)}
-                  >
-                    {caps.qualities.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-            </div>
-            {caps?.supports_audio && (
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={audio}
-                  disabled={locked}
-                  onChange={(event) => setAudio(event.target.checked)}
-                />
-                {t("生成原生音频")}
-              </label>
-            )}
-            <p className="field-hint">
-              {product?.model}
-              {product ? ` ${t("· 能力版本")}${product.version}` : ""}
-            </p>
-          </>
-        }
+        parameters={parameterFields}
         action={
           <button
             type="button"
             className="node-composer-submit"
             disabled={actionDisabled}
-            onClick={() => void (quote ? submit() : getQuote())}
-            aria-label={
-              quote
-                ? t("确认生成 · {0} 积分", quote.credits)
-                : t("获取准确报价")
-            }
+            onClick={() => void submit()}
+            aria-label={generationLabel}
+            aria-busy={busy || uploading}
           >
             {busy || uploading ? <Spinner /> : <Icon name="spark" size={13} />}
-            {busy || uploading
-              ? t("正在处理…")
-              : quote
-                ? t("确认生成")
-                : t("获取报价")}
+            {busy || uploading ? t("正在处理…") : generationLabel}
           </button>
         }
       >
@@ -825,33 +856,6 @@ export function Generate({
             {kind === "image" ? t("图片") : t("视频")}
             {t("商品。管理员完成网关、能力和价格配置并上架后，即可开始生成。")}
           </Notice>
-        )}
-        <div className="node-composer-estimate">
-          <span>
-            {quote ? t("本次确认报价") : t("本次预估积分")}{" "}
-            <strong>
-              {quote?.credits.toLocaleString() ||
-                priceEstimate?.total_credits.toLocaleString() ||
-                "—"}{" "}
-              {t("积分")}
-            </strong>
-          </span>
-          <span>{t("每次生成均需确认报价")}</span>
-        </div>
-        {quote && (
-          <div className="node-composer-confirmation">
-            {t("本次确认报价")}
-            <strong>
-              {quote.credits.toLocaleString()} {t("积分")}
-            </strong>
-            <small>
-              {quote.pricing ? priceFormula(quote.pricing) : ""} · {t("有效至")}
-              {new Date(quote.expires_at).toLocaleTimeString()}
-            </small>
-            <small>
-              {t("服务端报价后确认总价。提交时冻结积分，作品保存完成后结算。")}
-            </small>
-          </div>
         )}
         {referenceNotes.length > 0 && (
           <details className="node-composer-notes">
@@ -950,25 +954,16 @@ export function Generate({
             )}
             {product && (
               <>
-                <label>
-                  {t("生成模型")}
-                  <select
-                    value={product.id}
-                    onChange={(e) => setProductId(e.target.value)}
-                  >
-                    {available.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.demo ? t(" · 开发模拟") : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="field-hint">
-                    {product.model}
-                    {t("· 能力版本")}
-                    {product.version}
-                  </small>
-                </label>
+                <CanvasSelect
+                  label={t("生成模型")}
+                  value={product.id}
+                  onChange={setProductId}
+                  disabled={locked}
+                  options={available.map((item) => ({
+                    value: item.id,
+                    label: item.name + (item.demo ? t(" · 开发模拟") : ""),
+                  }))}
+                />
                 <label>
                   {t("描述你想看到的画面")}
                   <textarea
@@ -981,120 +976,39 @@ export function Generate({
                     maxLength={12000}
                   />
                 </label>
-                <div className="parameter-grid">
-                  {caps?.aspect_ratios?.length ? (
-                    <label>
-                      {t("画面比例")}
-                      <select
-                        value={ratio}
-                        onChange={(e) => setRatio(e.target.value)}
-                      >
-                        {caps.aspect_ratios.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {kind === "video" && caps?.durations?.length ? (
-                    <label>
-                      {t("视频时长")}
-                      <select
-                        value={duration}
-                        onChange={(e) => setDuration(Number(e.target.value))}
-                      >
-                        {caps.durations.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                            {t("秒")}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {caps?.resolutions?.length ? (
-                    <label>
-                      {t("分辨率")}
-                      <select
-                        value={resolution}
-                        onChange={(e) => setResolution(e.target.value)}
-                      >
-                        {caps.resolutions.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {kind === "image" && caps?.sizes?.length ? (
-                    <label>
-                      {t("尺寸")}
-                      <select
-                        value={size}
-                        onChange={(e) => setSize(e.target.value)}
-                      >
-                        {caps.sizes.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {kind === "image" && caps?.qualities?.length ? (
-                    <label>
-                      {t("质量")}
-                      <select
-                        value={quality}
-                        onChange={(e) => setQuality(e.target.value)}
-                      >
-                        {caps.qualities.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                </div>
-                {caps?.supports_audio && (
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={audio}
-                      onChange={(e) => setAudio(e.target.checked)}
-                    />
-                    {t("生成原生音频")}
-                  </label>
-                )}
+                {parameterFields}
                 {caps?.supports_frames && (
                   <div className="parameter-grid">
-                    <label>
-                      {t("首帧")}
-                      <select
-                        value={startFrame}
-                        onChange={(e) => setStartFrame(e.target.value)}
-                      >
-                        <option value="">{t("不使用")}</option>
-                        {assets
-                          .filter((a) => a.kind === "image")
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.file_name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <label>
-                      {t("尾帧")}
-                      <select
-                        value={endFrame}
-                        onChange={(e) => setEndFrame(e.target.value)}
-                      >
-                        <option value="">{t("不使用")}</option>
-                        {assets
-                          .filter((a) => a.kind === "image")
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.file_name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                    <CanvasSelect
+                      label={t("首帧")}
+                      value={startFrame}
+                      onChange={setStartFrame}
+                      disabled={locked}
+                      options={[
+                        { value: "", label: t("不使用") },
+                        ...assets
+                          .filter((asset) => asset.kind === "image")
+                          .map((asset) => ({
+                            value: asset.id,
+                            label: asset.file_name,
+                          })),
+                      ]}
+                    />
+                    <CanvasSelect
+                      label={t("尾帧")}
+                      value={endFrame}
+                      onChange={setEndFrame}
+                      disabled={locked}
+                      options={[
+                        { value: "", label: t("不使用") },
+                        ...assets
+                          .filter((asset) => asset.kind === "image")
+                          .map((asset) => ({
+                            value: asset.id,
+                            label: asset.file_name,
+                          })),
+                      ]}
+                    />
                   </div>
                 )}
               </>
@@ -1257,17 +1171,16 @@ export function Generate({
               <div>
                 <span>{t("本次预估积分")}</span>
                 <strong>
-                  {priceEstimate
-                    ? priceEstimate.total_credits.toLocaleString()
-                    : "—"}{" "}
+                  {displayedCredits?.toLocaleString() || "—"}{" "}
                   <small>{t("积分")}</small>
                 </strong>
               </div>
-              {priceEstimate && (
+              {displayedPrice && (
                 <p>
-                  {priceFormula(priceEstimate)}
-                  {priceEstimate.resolution && ` · ${priceEstimate.resolution}`}
-                  {priceEstimate.billing_unit === "per_second" && (
+                  {priceFormula(displayedPrice)}
+                  {displayedPrice.resolution &&
+                    ` · ${displayedPrice.resolution}`}
+                  {displayedPrice.billing_unit === "per_second" && (
                     <>
                       <br />
                       {t("按所选请求时长计费")}
@@ -1275,11 +1188,7 @@ export function Generate({
                   )}
                 </p>
               )}
-              <p>
-                {t(
-                  "服务端报价后确认总价。提交时冻结积分，作品保存完成后结算。",
-                )}
-              </p>
+              <p>{t("提交时冻结积分，作品保存完成后结算。")}</p>
             </div>
             {priceProblem && <Notice error>{priceProblem}</Notice>}
             {(system?.demo || product?.demo) && (
@@ -1294,40 +1203,15 @@ export function Generate({
       </fieldset>
       {recoveryNotices}
       <div className="modal-actions generate-actions">
-        <span>
-          {quote ? (
-            <>
-              {t("本次确认报价")}
-              <strong>
-                {quote.credits.toLocaleString()}
-                {t("积分")}
-              </strong>
-              {quote.pricing && (
-                <small>
-                  {priceFormula(quote.pricing)}
-                  {quote.pricing.resolution && ` · ${quote.pricing.resolution}`}
-                </small>
-              )}
-              <small>
-                {t("有效至")}
-                {new Date(quote.expires_at).toLocaleTimeString("zh-CN")}
-              </small>
-            </>
-          ) : (
-            t("每次生成均需确认报价")
-          )}
-        </span>
+        <span>{t("提交时冻结积分，作品保存完成后结算。")}</span>
         <button
           className="button primary"
           disabled={actionDisabled}
-          onClick={() => void (quote ? submit() : getQuote())}
+          onClick={() => void submit()}
+          aria-busy={busy}
         >
           {busy ? <Spinner /> : <Icon name="spark" />}
-          {busy
-            ? t("正在处理…")
-            : quote
-              ? t("确认生成 · {0} 积分", quote.credits)
-              : t("获取准确报价")}
+          {busy ? t("正在处理…") : generationLabel}
         </button>
       </div>
     </Modal>

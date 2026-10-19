@@ -1,0 +1,135 @@
+.canvas-select {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.canvas-select > label {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+.parameter-grid > .canvas-select > label {
+  margin: 0;
+}
+.generate-form > .canvas-select {
+  margin-top: 20px;
+}
+.generate-form .generation-parameters {
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.canvas-select .canvas-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 39px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--panel-light);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.canvas-select .canvas-select-trigger:hover:not(:disabled) {
+  border-color: var(--quiet);
+}
+.canvas-select .canvas-select-trigger[aria-expanded="true"] {
+  border-color: var(--amber);
+}
+.canvas-select .canvas-select-trigger:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+.canvas-select .canvas-select-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.canvas-select-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.canvas-select-trigger > svg,
+.canvas-select-option > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.canvas-select-trigger > svg {
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+.canvas-select-trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.canvas-select-menu {
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: var(--canvas-panel-shadow);
+  cursor: default;
+}
+.canvas-select-listbox {
+  position: relative;
+  max-height: min(300px, calc(100dvh - 46px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  outline: none;
+}
+.canvas-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 37px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.canvas-select-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.canvas-select-option[data-active] {
+  background: var(--panel-light);
+}
+.canvas-select-option[aria-selected="true"] {
+  color: var(--amber);
+}
+.canvas-select-option > svg {
+  visibility: hidden;
+}
+.canvas-select-option[aria-selected="true"] > svg {
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-select .canvas-select-trigger,
+  .canvas-select-trigger > svg {
+    transition: none;
+  }
+}

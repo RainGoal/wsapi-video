@@ -95,6 +95,25 @@ const english: Record<string, string> = {
   "点击节点，输入提示词或添加参考素材":
     "Click to enter a prompt or add references",
   暂无可用模型: "No models available",
+  模型默认: "Model default",
+  生成: "Generate",
+  "生成 · {0} 积分": "Generate · {0} credits",
+  "输入已更改，请重新点击生成。": "Inputs changed. Click Generate again.",
+  "服务端未返回有效生成价格，请重试。":
+    "The server returned an invalid generation price. Please retry.",
+  "价格已更新为 {0} 积分，请再次点击生成确认。":
+    "The price changed to {0} credits. Click Generate again to confirm.",
+  "生成价格已失效，请重新点击生成。":
+    "The generation price expired. Click Generate again.",
+  "输入或生成价格已更改，请重新点击生成。":
+    "Inputs or the generation price changed. Click Generate again.",
+  "提交时冻结积分，作品保存完成后结算。":
+    "Credits are reserved on submission and settled after the output is saved.",
+  自动质量: "Auto quality",
+  低质量: "Low quality",
+  中等质量: "Medium quality",
+  高质量: "High quality",
+  标准质量: "Standard quality",
   生成参数: "Generation parameters",
   参数: "Parameters",
   "已选择 {0} 项": "{0} selected",
