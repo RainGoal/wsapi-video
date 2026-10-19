@@ -354,6 +354,17 @@ func graphReferences(raw json.RawMessage) (map[string]string, error) {
 	if _, ok = graph["edges"].([]any); !ok {
 		return nil, errors.New("invalid edges")
 	}
+	if value, exists := graph["backgroundMode"]; exists {
+		mode, ok := value.(string)
+		if !ok || (mode != "lines" && mode != "dots" && mode != "blank") {
+			return nil, errors.New("invalid background mode")
+		}
+	}
+	if value, exists := graph["showImageInfo"]; exists {
+		if _, ok := value.(bool); !ok {
+			return nil, errors.New("invalid image information visibility")
+		}
+	}
 	ids := map[string]string{}
 	var visit func(any, int) error
 	visit = func(value any, depth int) error {

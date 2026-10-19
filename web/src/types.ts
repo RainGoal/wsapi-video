@@ -71,6 +71,8 @@ export type CanvasDocument = {
     nodes: import("./types/canvas").CanvasNodeData[];
     edges: import("./types/canvas").CanvasConnection[];
     viewport: { x: number; y: number; zoom: number };
+    backgroundMode?: import("./types/canvas").CanvasBackgroundMode;
+    showImageInfo?: boolean;
   };
 };
 export type Capabilities = {

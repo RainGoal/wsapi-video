@@ -39,6 +39,39 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  调整组大小: "Resize group",
+  "拖动调整大小，或使用方向键": "Drag to resize, or use the arrow keys",
+  "双击空白添加节点 · 拖动空白移动 · 滚轮缩放":
+    "Double-click to add nodes · Drag the background to pan · Scroll to zoom",
+  移动画布: "Pan canvas",
+  "拖动空白移动画布，点击节点编辑":
+    "Drag the background to pan; click a node to edit",
+  添加组: "Add group",
+  画布外观: "Canvas appearance",
+  主题: "Theme",
+  浅色: "Light",
+  深色: "Dark",
+  背景样式: "Background",
+  点阵: "Dots",
+  线格: "Lines",
+  空白: "Blank",
+  显示图片信息: "Show image information",
+  组名称: "Group name",
+  双击修改组名称: "Double-click to rename the group",
+  "{0} 个节点": "{0} nodes",
+  小地图: "Minimap",
+  "画布小地图，拖动或按方向键定位，回车适合画布":
+    "Canvas minimap: drag or use arrow keys to navigate; press Enter to fit the canvas",
+  视图控制: "View controls",
+  关闭小地图: "Close minimap",
+  打开小地图: "Open minimap",
+  画布缩放: "Canvas zoom",
+  快捷键: "Shortcuts",
+  "点击节点 · Shift / Ctrl / ⌘ 点击多选 · 按住 Ctrl 或空格拖动空白框选":
+    "Click a node · Shift / Ctrl / ⌘ click to select more · Hold Ctrl or Space and drag the background to select an area",
+  "拖动空白或按住鼠标中键移动 · 滚轮缩放 · 触屏双指缩放":
+    "Drag the background or the middle mouse button to pan · Scroll to zoom · Pinch on a touchscreen",
+  "分组 / 解组": "Group / Ungroup",
   收起创作面板: "Close composer",
   从画布选择参考素材: "Pick a reference from the canvas",
   返回输入框: "Back to composer",

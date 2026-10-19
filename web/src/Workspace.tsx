@@ -25,6 +25,11 @@ import {
   resetCanvasHistory,
 } from "./lib/canvas/canvas-history";
 import {
+  canvasDocumentGraph,
+  canvasGraphFromDocument,
+  withCanvasAppearanceDefaults,
+} from "./lib/canvas/canvas-document";
+import {
   CanvasNodeType,
   emptyGraph,
   type CanvasNodeData,
@@ -110,17 +115,7 @@ export function Workspace({
       const document = await api<CanvasDocument>(
         `/projects/${projectId}/canvas`,
       );
-      const next: Graph = {
-        nodes: document.graph.nodes || [],
-        connections: document.graph.edges || [],
-        viewport: document.graph.viewport
-          ? {
-              x: document.graph.viewport.x,
-              y: document.graph.viewport.y,
-              k: document.graph.viewport.zoom || 1,
-            }
-          : emptyGraph().viewport,
-      };
+      const next = canvasGraphFromDocument(document);
       revision.current = document.revision;
       saved.current = JSON.stringify(next);
       needsSaveConfirmation.current = false;
@@ -131,8 +126,11 @@ export function Workspace({
       setDraft(null);
       try {
         const local = JSON.parse(localStorage.getItem(draftKey) || "null");
-        if (local?.graph && JSON.stringify(local.graph) !== saved.current)
-          setDraft(local);
+        if (local?.graph) {
+          const recovered = withCanvasAppearanceDefaults(local.graph);
+          if (JSON.stringify(recovered) !== saved.current)
+            setDraft({ ...local, graph: recovered });
+        }
       } catch {
         /* A blocked or invalid draft must not block cloud project loading. */
       }
@@ -209,15 +207,7 @@ export function Workspace({
         {
           graph_schema_version: 1,
           revision: revision.current,
-          graph: {
-            nodes: snapshot.nodes,
-            edges: snapshot.connections,
-            viewport: {
-              x: snapshot.viewport.x,
-              y: snapshot.viewport.y,
-              zoom: snapshot.viewport.k,
-            },
-          },
+          graph: canvasDocumentGraph(snapshot),
         },
       );
       revision.current = result.revision;
@@ -368,15 +358,7 @@ export function Workspace({
         "POST",
         {
           name: t("{0} · 冲突副本", project.data?.name || t("项目")),
-          graph: {
-            nodes: current.nodes,
-            edges: current.connections,
-            viewport: {
-              x: current.viewport.x,
-              y: current.viewport.y,
-              zoom: current.viewport.k,
-            },
-          },
+          graph: canvasDocumentGraph(current),
         },
       );
       notify(t("画布草稿与素材引用已另存为项目副本"));

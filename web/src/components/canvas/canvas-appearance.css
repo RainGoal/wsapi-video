@@ -1,0 +1,126 @@
+.canvas-appearance-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.canvas-appearance-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 16px);
+  z-index: 30;
+  width: 252px;
+  max-width: calc(100vw - 24px);
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: var(--canvas-panel-shadow, 0 12px 36px #0004);
+  cursor: default;
+}
+.canvas-appearance-popover h3 {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.canvas-appearance-popover fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0 0 14px;
+  border: 0;
+}
+.canvas-appearance-popover legend {
+  padding: 0;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.canvas-appearance-segments {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--panel-light);
+}
+.canvas-appearance-segments button {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 33px;
+  padding: 5px 3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.canvas-appearance-segments button:hover {
+  color: var(--text);
+}
+.canvas-appearance-segments button[aria-pressed="true"] {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 1px 3px #0000000c;
+}
+.canvas-appearance-switch {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 1px 0;
+  padding: 3px 0;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.canvas-appearance-switch input {
+  position: absolute;
+  right: 0;
+  width: 32px;
+  height: 19px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.canvas-appearance-switch-track {
+  width: 32px;
+  height: 19px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--quiet);
+  transition: background 140ms ease;
+  pointer-events: none;
+}
+.canvas-appearance-switch-track::before {
+  content: "";
+  display: block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 140ms ease;
+}
+.canvas-appearance-switch input:checked + .canvas-appearance-switch-track {
+  background: var(--amber);
+}
+.canvas-appearance-switch
+  input:checked
+  + .canvas-appearance-switch-track::before {
+  transform: translateX(13px);
+}
+.canvas-appearance-switch
+  input:focus-visible
+  + .canvas-appearance-switch-track {
+  outline: 2px solid var(--amber);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-appearance-switch-track,
+  .canvas-appearance-switch-track::before {
+    transition: none;
+  }
+}

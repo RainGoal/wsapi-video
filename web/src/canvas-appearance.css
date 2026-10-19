@@ -1,0 +1,481 @@
+/* Scope the canvas theme so the rest of the studio keeps its own appearance.
+   Composer popovers are portalled, so they carry their own theme attribute. */
+:is(
+  .canvas-layout,
+  .canvas-appearance-popover,
+  .node-composer-settings-popover,
+  .node-reference-popover
+)[data-canvas-theme] {
+  --bg: #151718;
+  --panel: #202325;
+  --panel-light: #2a2d2f;
+  --line: #414543;
+  --text: #ecece7;
+  --muted: #a4a79f;
+  --quiet: #737970;
+  --amber: #d7ab6a;
+  --green: #a4bea9;
+  --red: #dc9b91;
+  --canvas-node: #222628;
+  --canvas-hover: #ffffff0b;
+  --canvas-group: #c2b79b05;
+  --canvas-group-border: #797a70;
+  --canvas-panel-shadow: 0 10px 32px #0004, 0 1px 4px #0002;
+  --canvas-text: var(--text);
+  --canvas-panel: var(--panel);
+  --canvas-border: var(--line);
+  --canvas-muted: var(--muted);
+  --canvas-accent: var(--amber);
+  color-scheme: dark;
+  color: var(--text);
+}
+:is(
+  .canvas-layout,
+  .canvas-appearance-popover,
+  .node-composer-settings-popover,
+  .node-reference-popover
+)[data-canvas-theme="light"] {
+  --bg: #f4f3ef;
+  --panel: #fffefa;
+  --panel-light: #eeede8;
+  --line: #d8d6cd;
+  --text: #35352f;
+  --muted: #74766b;
+  --quiet: #96988c;
+  --amber: #a57231;
+  --green: #537662;
+  --red: #b15849;
+  --canvas-node: #fffefa;
+  --canvas-hover: #302f2709;
+  --canvas-group: #91836505;
+  --canvas-group-border: #b0ad9f;
+  --canvas-panel-shadow: 0 10px 32px #4d47351a, 0 1px 4px #4d473508;
+  color-scheme: light;
+}
+.canvas-layout[data-canvas-theme] {
+  background: var(--bg);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .canvas-node,
+    .canvas-tool-dock,
+    .canvas-zoom,
+    .canvas-node-hover-toolbar,
+    .canvas-node-prompt-panel,
+    .node-inspector,
+    .canvas-selection-actions,
+    .canvas-reference-picking-hint,
+    .canvas-reference-guide,
+    .canvas-connection-status
+  ) {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: var(--canvas-panel-shadow);
+}
+.canvas-layout[data-canvas-theme] .canvas-node {
+  border-radius: 12px;
+  background: var(--canvas-node);
+  box-shadow: 0 3px 12px #0000000a;
+}
+.canvas-layout[data-canvas-theme] .canvas-node.node-selected {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+.canvas-layout[data-canvas-theme]
+  :is(.node-header, .node-header > svg, .node-header > button, .node-note) {
+  color: var(--muted);
+  border-color: var(--line);
+}
+.canvas-layout[data-canvas-theme] .is-media-node > .node-header {
+  position: absolute;
+  top: -31px;
+  left: 0;
+  right: 0;
+  height: 25px;
+  padding: 0 3px;
+  border: 0;
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+}
+.canvas-layout[data-canvas-theme]
+  .is-media-node:is(:hover, .node-selected, :focus-within)
+  > .node-header {
+  opacity: 1;
+  pointer-events: auto;
+}
+.canvas-layout[data-canvas-theme] .is-media-node > .node-body {
+  height: 100%;
+  border-radius: inherit;
+}
+.canvas-layout[data-canvas-theme] :is(.node-body > img, .node-body > video) {
+  background: var(--canvas-node);
+}
+.canvas-layout[data-canvas-theme] .node-generation-kind {
+  padding: 2px 4px;
+  border: 0;
+  color: var(--quiet);
+  font-size: 9px;
+}
+.canvas-layout[data-canvas-theme] .canvas-node .node-port {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--panel);
+  box-shadow: 0 0 0 4px var(--bg);
+  transition:
+    opacity 110ms ease,
+    background 110ms ease;
+}
+.canvas-layout[data-canvas-theme] .port-out {
+  right: -12px;
+}
+.canvas-layout[data-canvas-theme] .port-in {
+  left: -12px;
+}
+.canvas-layout[data-canvas-theme] .node-port::before {
+  inset: -9px;
+}
+.canvas-layout[data-canvas-theme]
+  .canvas-node:is(:hover, .node-selected, :focus-within)
+  .node-port,
+.canvas-layout[data-canvas-theme] .canvas-connecting .node-port,
+.canvas-layout[data-canvas-theme]
+  .node-port:is(:hover, :focus-visible, .port-active) {
+  opacity: 1;
+}
+.canvas-layout[data-canvas-theme]
+  .node-port:is(:hover, :focus-visible, .port-active) {
+  border-color: var(--amber);
+  color: var(--bg);
+  background: var(--amber);
+}
+.canvas-layout[data-canvas-theme] .port-caption {
+  display: none;
+}
+.canvas-layout[data-canvas-theme] .canvas-reference-picking .node-port {
+  pointer-events: none;
+  opacity: 0;
+}
+.canvas-layout[data-canvas-theme].canvas-node-dragging {
+  cursor: grabbing;
+}
+.canvas-layout[data-canvas-theme].canvas-node-dragging .node-port {
+  opacity: 0;
+}
+.canvas-layout[data-canvas-theme] .canvas-group {
+  border: 1px dashed var(--canvas-group-border);
+  background: var(--canvas-group);
+  box-shadow: none;
+  border-radius: 14px;
+}
+.canvas-layout[data-canvas-theme] .canvas-group > .node-header {
+  height: 40px;
+  border: 0;
+  color: var(--muted);
+  overflow: visible;
+}
+.canvas-layout[data-canvas-theme] .group-name-input {
+  min-width: 0;
+  width: 0;
+  flex: 1;
+  height: 28px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+.canvas-layout[data-canvas-theme] .node-header > .group-title {
+  flex: 0 1 auto;
+  max-width: calc(100% - 110px);
+  cursor: text;
+}
+.canvas-layout[data-canvas-theme] .node-group-count {
+  margin-left: auto;
+}
+.canvas-layout[data-canvas-theme] .group-name-input:focus {
+  border-color: var(--amber);
+  background: var(--panel);
+  box-shadow: 0 0 0 2px #d7ab6a20;
+}
+.canvas-layout[data-canvas-theme] .node-group-count {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--quiet);
+  background: var(--canvas-hover);
+}
+.canvas-layout[data-canvas-theme] .canvas-group.node-group-drop-target {
+  border-color: var(--amber);
+  border-style: solid;
+  background: #d7ab6a0c;
+  box-shadow: 0 0 0 3px #d7ab6a28;
+}
+.canvas-layout[data-canvas-theme] .group-resize-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--panel);
+  opacity: 0;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.canvas-layout[data-canvas-theme]
+  .canvas-group:is(:hover, .node-selected, :focus-within)
+  .group-resize-handle {
+  opacity: 1;
+}
+.canvas-layout[data-canvas-theme] .group-resize-handle:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.canvas-layout[data-canvas-theme] .node-media-info {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 2px;
+  right: 2px;
+  display: flex;
+  gap: 6px;
+  color: var(--quiet);
+  font-size: 10px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.canvas-layout[data-canvas-theme] .canvas-tool-dock {
+  gap: 3px;
+  padding: 6px;
+  border-radius: 13px;
+  backdrop-filter: blur(16px);
+  z-index: 25;
+}
+.canvas-layout[data-canvas-theme] .canvas-tool-dock > i {
+  background: var(--line);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .canvas-tool-dock .icon-button,
+    .canvas-node-hover-toolbar button,
+    .canvas-node-hover-toolbar a,
+    .canvas-zoom button
+  ) {
+  color: var(--muted);
+  border-radius: 8px;
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .canvas-tool-dock .icon-button:hover,
+    .canvas-tool-dock .icon-button.selected,
+    .canvas-node-hover-toolbar button:hover,
+    .canvas-node-hover-toolbar a:hover,
+    .canvas-zoom button:hover
+  ) {
+  color: var(--text);
+  background: var(--canvas-hover);
+}
+.canvas-layout[data-canvas-theme] .canvas-tool-dock .canvas-create-button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+.canvas-layout[data-canvas-theme]
+  .canvas-tool-dock
+  .canvas-create-button:hover {
+  color: var(--text);
+  background: var(--canvas-hover);
+}
+.canvas-layout[data-canvas-theme] .canvas-node-hover-toolbar {
+  padding: 4px;
+  border-radius: 11px;
+}
+.canvas-layout[data-canvas-theme] .canvas-node-hover-toolbar .danger-text {
+  color: var(--red);
+}
+.canvas-layout[data-canvas-theme] .node-inspector {
+  box-shadow: none;
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .node-inspector label,
+    .inspector-heading,
+    .node-reference-summary h3,
+    .canvas-empty h2,
+    .node-task-state strong
+  ) {
+  color: var(--text);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .inspector-note,
+    .node-task-state,
+    .node-task-state small,
+    .node-task-state > span,
+    .asset-visual-error,
+    .asset-visual-error small,
+    .canvas-empty p,
+    .canvas-empty small,
+    .canvas-attribution,
+    .node-generation > p,
+    .node-reference-summary,
+    .node-reference-summary small,
+    .node-reference-summary > p,
+    .node-reference-row > span,
+    .generation-input-row,
+    .generation-input-row strong
+  ) {
+  color: var(--muted);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .node-task-state > svg,
+    .node-generation > svg,
+    .canvas-reference-guide > svg,
+    .canvas-reference-guide b
+  ) {
+  color: var(--amber);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .inspector-heading,
+    .node-reference-summary,
+    .node-reference-row,
+    .generation-input-row
+  ) {
+  border-color: var(--line);
+}
+.canvas-layout[data-canvas-theme]
+  :is(
+    .node-reference-summary,
+    .canvas-selection-actions button,
+    .canvas-reference-picking-hint button
+  ) {
+  background: var(--panel-light);
+}
+.canvas-layout[data-canvas-theme]
+  :is(.canvas-node-placeholder, .canvas-node-placeholder-icon) {
+  color: var(--quiet);
+}
+.canvas-layout[data-canvas-theme] .canvas-node-placeholder-icon {
+  background: var(--canvas-hover);
+}
+.canvas-layout[data-canvas-theme] .node-task-state p {
+  color: var(--red);
+}
+.canvas-layout[data-canvas-theme] .node-inspector :is(input, textarea, select) {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--line);
+}
+.canvas-layout[data-canvas-theme]
+  :is(.connection-hint, .node-reference-target, .canvas-connection-status) {
+  border-color: var(--amber);
+}
+.canvas-layout[data-canvas-theme] .connection-hint {
+  color: var(--text);
+  background: var(--panel);
+}
+.canvas-layout[data-canvas-theme] .node-reference-target {
+  box-shadow: 0 0 0 3px #d7ab6a35;
+}
+.canvas-layout[data-canvas-theme] .node-reference-row .icon-button {
+  color: var(--amber);
+}
+.canvas-layout[data-canvas-theme] .node-group-count {
+  flex: 0 0 auto;
+}
+.canvas-layout[data-canvas-theme] .canvas-node-prompt-panel {
+  background: var(--panel);
+  box-shadow: var(--canvas-panel-shadow);
+}
+.canvas-layout[data-canvas-theme] .node-composer-controls > select {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--panel-light);
+}
+.canvas-layout[data-canvas-theme] .node-composer-prompt,
+.canvas-layout[data-canvas-theme] .node-composer-prompt:focus {
+  color: var(--text);
+  background: transparent;
+}
+.canvas-layout[data-canvas-theme] .node-composer-submit {
+  color: #191d1a;
+  background: #d7ab6a;
+}
+.canvas-layout[data-canvas-theme] .canvas-node-prompt-panel .notice {
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--panel-light);
+}
+.canvas-layout[data-canvas-theme] .canvas-node-prompt-panel .notice-error {
+  color: var(--red);
+}
+.canvas-layout[data-canvas-theme] .node-reference-add,
+.canvas-layout[data-canvas-theme] .node-reference-remove {
+  border-color: var(--line);
+}
+:is(
+  .node-composer-settings-popover,
+  .node-reference-popover
+)[data-canvas-theme] {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: var(--canvas-panel-shadow);
+}
+:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
+  :is(input, select, textarea) {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--panel-light);
+}
+:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
+  :is(label, .checkbox-label, .field-hint) {
+  color: var(--muted);
+}
+:is(.node-composer-settings-popover, .node-reference-popover)[data-canvas-theme]
+  .button {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--panel-light);
+}
+@media (pointer: coarse) {
+  .canvas-layout[data-canvas-theme] .canvas-node .node-port {
+    width: 30px;
+    height: 30px;
+  }
+  .canvas-layout[data-canvas-theme] .port-out {
+    right: -16px;
+  }
+  .canvas-layout[data-canvas-theme] .port-in {
+    left: -16px;
+  }
+  .canvas-layout[data-canvas-theme] .canvas-node.node-selected .node-port {
+    opacity: 1;
+  }
+  .canvas-layout[data-canvas-theme] .group-resize-handle {
+    width: 32px;
+    height: 32px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-layout[data-canvas-theme] .canvas-node .node-port {
+    transition: none;
+  }
+}

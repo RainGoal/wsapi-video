@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { useThemeStore } from "../../stores/use-theme-store";
 
 // Popovers live outside the scrollable node composer and use screen coordinates.
 export function CanvasPopover({
@@ -24,6 +25,7 @@ export function CanvasPopover({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const theme = useThemeStore((state) => state.theme);
   const popup = useRef<HTMLDivElement>(null);
   const previousFocus = useRef(document.activeElement as HTMLElement | null);
   const close = useRef(onClose);
@@ -105,6 +107,7 @@ export function CanvasPopover({
       role="group"
       aria-label={label}
       data-canvas-no-zoom
+      data-canvas-theme={theme}
       style={{
         ...position,
         position: "fixed",

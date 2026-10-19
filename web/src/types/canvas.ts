@@ -1,5 +1,6 @@
 export type Position = { x: number; y: number };
 export type ViewportTransform = Position & { k: number };
+export type CanvasBackgroundMode = "lines" | "dots" | "blank";
 export enum CanvasNodeType {
   Image = "image",
   Text = "text",
@@ -55,9 +56,13 @@ export type Graph = {
   nodes: CanvasNodeData[];
   connections: CanvasConnection[];
   viewport: ViewportTransform;
+  backgroundMode?: CanvasBackgroundMode;
+  showImageInfo?: boolean;
 };
 export const emptyGraph = (): Graph => ({
   nodes: [],
   connections: [],
   viewport: { x: 80, y: 80, k: 1 },
+  backgroundMode: "lines",
+  showImageInfo: false,
 });

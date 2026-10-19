@@ -1,8 +1,14 @@
 import { t } from "./i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InfiniteCanvas } from "./components/canvas/infinite-canvas";
 import { CanvasNodePlaceholder } from "./components/canvas/canvas-node-placeholder";
 import { CanvasNodeHoverToolbar } from "./components/canvas/canvas-node-hover-toolbar";
+import { CanvasAppearance } from "./components/canvas/canvas-appearance";
+import { CanvasViewControls } from "./components/canvas/canvas-view-controls";
+import { CanvasGroupLabel } from "./components/canvas/canvas-group-label";
+import { placeCanvasComposer } from "./lib/canvas/canvas-overlay-geometry";
+import { CANVAS_STACKED_CONTROLS_WIDTH } from "./lib/canvas/canvas-view-geometry";
+import { useThemeStore } from "./stores/use-theme-store";
 import {
   ConnectionCreateMenu,
   NodeCreateMenu,
@@ -29,6 +35,7 @@ import {
 } from "./lib/canvas/canvas-history";
 import "./canvas-interactions.css";
 import "./canvas-node-composer-overlay.css";
+import "./canvas-appearance.css";
 import {
   applyGroupSelection,
   applyUngroupSelection,
@@ -36,6 +43,8 @@ import {
   canGroupSelectedNodes,
   canUngroupSelectedNodes,
   findContainingGroupId,
+  findGroupDropTarget,
+  snapNodesIntoGroup,
   getGroupWrapRect,
   nodeBounds,
 } from "./lib/canvas/canvas-node-geometry";
@@ -78,8 +87,8 @@ export function CanvasEditor({
     container = useRef<HTMLDivElement>(null),
     graphRef = useRef(graph);
   graphRef.current = graph;
-  const [tool, setTool] = useState<"select" | "pan">("select"),
-    [selected, setSelected] = useState<string[]>([]),
+  const theme = useThemeStore((state) => state.theme);
+  const [selected, setSelected] = useState<string[]>([]),
     [connection, setConnection] = useState<ConnectionHandle | null>(null),
     [connectionCursor, setConnectionCursor] = useState<Position>({
       x: 0,
@@ -88,6 +97,9 @@ export function CanvasEditor({
     [connectionTarget, setConnectionTarget] = useState<string | null>(null),
     [connectionMessage, setConnectionMessage] = useState(""),
     [help, setHelp] = useState(false),
+    [isNodeDragging, setIsNodeDragging] = useState(false),
+    [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null),
+    [isResizing, setIsResizing] = useState(false),
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
     [box, setBox] = useState<{
       start: Position;
@@ -116,7 +128,13 @@ export function CanvasEditor({
     shiftKey: boolean;
     nodeId: string;
   } | null>(null);
-  const spacePressed = useRef(false);
+  const resize = useRef<{
+    pointerId: number;
+    nodeId: string;
+    start: Position;
+    graph: Graph;
+    moved: boolean;
+  } | null>(null);
   const connectionRef = useRef(connection);
   const linkDrag = useRef<{
     pointerId: number;
@@ -187,8 +205,6 @@ export function CanvasEditor({
         )
       )
         return;
-      if (event.code === "Space" && !target.closest("button,a,[role=button]"))
-        spacePressed.current = true;
       const modifier = event.ctrlKey || event.metaKey;
       if (modifier && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -202,6 +218,9 @@ export function CanvasEditor({
       } else if (modifier && event.key.toLowerCase() === "a") {
         event.preventDefault();
         setSelected(graphRef.current.nodes.map((n) => n.id));
+      } else if (modifier && event.key.toLowerCase() === "g") {
+        event.preventDefault();
+        event.shiftKey ? ungroup() : group();
       } else if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
         remove();
@@ -213,24 +232,13 @@ export function CanvasEditor({
         linkDrag.current = null;
         setConnectionMessage("");
         setSelectedEdge(null);
-      } else if (event.key.toLowerCase() === "v") setTool("select");
-      else if (event.key.toLowerCase() === "h") setTool("pan");
-    };
-    const release = (event: KeyboardEvent) => {
-      if (event.code === "Space") spacePressed.current = false;
-    };
-    const blur = () => {
-      spacePressed.current = false;
+      }
     };
     window.addEventListener("keydown", handler);
-    window.addEventListener("keyup", release);
-    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", handler);
-      window.removeEventListener("keyup", release);
-      window.removeEventListener("blur", blur);
     };
-  }, [undo, redo, duplicate, remove, pickingReferenceFor]);
+  }, [undo, redo, duplicate, remove, pickingReferenceFor, selected]);
   const world = useCallback((x: number, y: number) => {
     const bounds = container.current!.getBoundingClientRect(),
       v = graphRef.current.viewport;
@@ -406,6 +414,7 @@ export function CanvasEditor({
           return;
         checkpointCanvasHistory(history, current.graph);
         current.moved = true;
+        setIsNodeDragging(true);
         setHistoryVersion((v) => v + 1);
       }
       const next = {
@@ -432,6 +441,9 @@ export function CanvasEditor({
         ),
       };
       graphRef.current = next;
+      setDropTargetGroupId(
+        findGroupDropTarget(new Set(current.ids), next.nodes)?.id || null,
+      );
       onChange(next);
     }
     function end(event?: PointerEvent) {
@@ -442,20 +454,26 @@ export function CanvasEditor({
         return;
       if (drag.current.moved) {
         const ids = new Set(drag.current.ids);
-        const nodes = graphRef.current.nodes.map((node) => {
-          if (!ids.has(node.id) || node.type === CanvasNodeType.Group)
-            return node;
-          // Group movement retains membership; individual drops update it once.
-          if (node.metadata?.groupId && ids.has(node.metadata.groupId))
-            return node;
-          return {
-            ...node,
-            metadata: {
-              ...node.metadata,
-              groupId: findContainingGroupId(node, graphRef.current.nodes),
-            },
-          };
-        });
+        const target =
+          event?.type === "pointerup"
+            ? findGroupDropTarget(ids, graphRef.current.nodes)
+            : null;
+        const nodes = target
+          ? snapNodesIntoGroup(ids, graphRef.current.nodes, target)
+          : graphRef.current.nodes.map((node) => {
+              if (!ids.has(node.id) || node.type === CanvasNodeType.Group)
+                return node;
+              // Group movement retains membership; individual drops update it once.
+              if (node.metadata?.groupId && ids.has(node.metadata.groupId))
+                return node;
+              return {
+                ...node,
+                metadata: {
+                  ...node.metadata,
+                  groupId: findContainingGroupId(node, graphRef.current.nodes),
+                },
+              };
+            });
         const next = { ...graphRef.current, nodes };
         graphRef.current = next;
         onChange(next);
@@ -487,6 +505,8 @@ export function CanvasEditor({
         );
       }
       drag.current = null;
+      setIsNodeDragging(false);
+      setDropTargetGroupId(null);
     }
     function blur() {
       // Keep a completed move and its existing single history checkpoint.
@@ -494,6 +514,54 @@ export function CanvasEditor({
       end();
       setBox(null);
     }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", blur);
+    };
+  }, [history, onChange]);
+  useEffect(() => {
+    function move(event: PointerEvent) {
+      const current = resize.current;
+      if (!current || current.pointerId !== event.pointerId) return;
+      const original = current.graph.nodes.find(
+        (node) => node.id === current.nodeId,
+      );
+      if (!original) return;
+      const dx = (event.clientX - current.start.x) / current.graph.viewport.k;
+      const dy = (event.clientY - current.start.y) / current.graph.viewport.k;
+      if (!current.moved) {
+        if (Math.hypot(dx, dy) < 3) return;
+        checkpointCanvasHistory(history, current.graph);
+        current.moved = true;
+        setHistoryVersion((value) => value + 1);
+      }
+      const next = {
+        ...graphRef.current,
+        nodes: graphRef.current.nodes.map((node) =>
+          node.id === current.nodeId
+            ? {
+                ...node,
+                width: Math.max(120, original.width + dx),
+                height: Math.max(80, original.height + dy),
+              }
+            : node,
+        ),
+      };
+      graphRef.current = next;
+      onChange(next);
+    }
+    function end(event?: PointerEvent) {
+      if (event && event.pointerId !== resize.current?.pointerId) return;
+      resize.current = null;
+      setIsResizing(false);
+    }
+    const blur = () => end();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
@@ -688,10 +756,11 @@ export function CanvasEditor({
     }
     if (
       event.button !== 0 ||
-      (event.target as HTMLElement).closest("button,input,textarea,video")
+      (event.target as HTMLElement).closest(
+        "button,input,textarea,select,video,audio,[contenteditable=true]",
+      )
     )
       return;
-    if (tool === "pan" || event.ctrlKey || spacePressed.current) return;
     event.stopPropagation();
     setCreateMenu(null);
     if (connection) {
@@ -700,7 +769,7 @@ export function CanvasEditor({
     }
     const ids = selected.includes(node.id)
       ? selected
-      : event.shiftKey
+      : event.shiftKey || event.ctrlKey || event.metaKey
         ? [...selected, node.id]
         : [node.id];
     // Opening a mobile inspector on the first finger would cover the second finger's pinch target.
@@ -718,18 +787,20 @@ export function CanvasEditor({
       touch: event.pointerType === "touch",
       selection: ids,
       selectionBefore: selected,
-      shiftKey: event.shiftKey,
+      shiftKey: event.shiftKey || event.ctrlKey || event.metaKey,
       nodeId: node.id,
     };
   }
   function group() {
-    const members = collectGroupMemberNodes(new Set(selected), graph.nodes);
+    const current = graphRef.current;
+    if (!canGroupSelectedNodes(new Set(selected), current.nodes)) return;
+    const members = collectGroupMemberNodes(new Set(selected), current.nodes);
     if (members.length < 2) return;
     const rect = getGroupWrapRect(members);
     const result = applyGroupSelection(
       new Set(selected),
-      graph.nodes,
-      graph.connections,
+      current.nodes,
+      current.connections,
       {
         id: crypto.randomUUID(),
         type: CanvasNodeType.Group,
@@ -741,7 +812,7 @@ export function CanvasEditor({
     );
     if (result) {
       commit({
-        ...graph,
+        ...current,
         nodes: result.nodes,
         connections: result.connections,
       });
@@ -749,14 +820,15 @@ export function CanvasEditor({
     }
   }
   function ungroup() {
+    const current = graphRef.current;
     const result = applyUngroupSelection(
       new Set(selected),
-      graph.nodes,
-      graph.connections,
+      current.nodes,
+      current.connections,
     );
     if (result) {
       commit({
-        ...graph,
+        ...current,
         nodes: result.nodes,
         connections: result.connections,
       });
@@ -787,20 +859,14 @@ export function CanvasEditor({
       },
     });
   }
-  function zoom(factor: number) {
-    const current = graphRef.current;
-    const x = (container.current?.clientWidth || 960) / 2;
-    const y = (container.current?.clientHeight || 640) / 2;
-    const k = Math.min(5, Math.max(0.05, current.viewport.k * factor));
-    onChange({
-      ...current,
-      viewport: {
-        x: x - ((x - current.viewport.x) / current.viewport.k) * k,
-        y: y - ((y - current.viewport.y) / current.viewport.k) * k,
-        k,
-      },
-    });
-  }
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const node of graph.nodes) {
+      const id = node.metadata?.groupId;
+      if (id) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    return counts;
+  }, [graph.nodes]);
   const activeNode =
     selected.length === 1
       ? graph.nodes.find((n) => n.id === selected[0])
@@ -809,28 +875,16 @@ export function CanvasEditor({
     activeNode?.id === composerNodeId && !pickingReferenceFor
       ? activeNode
       : undefined;
-  const composerWidth = Math.min(420, Math.max(0, stageSize.width - 24));
+  const composerWidth = Math.min(520, Math.max(0, stageSize.width - 24));
   const composerPosition = composerNode
-    ? {
-        x: Math.max(
-          12,
-          Math.min(
-            stageSize.width - composerWidth - 12,
-            graph.viewport.x +
-              (composerNode.position.x + composerNode.width) *
-                graph.viewport.k +
-              24,
-          ),
-        ),
-        y: Math.max(
-          62,
-          Math.min(
-            Math.max(62, stageSize.height - 440),
-            graph.viewport.y + composerNode.position.y * graph.viewport.k,
-          ),
-        ),
-      }
-    : { x: 12, y: 62 };
+    ? placeCanvasComposer(
+        composerNode,
+        graph.viewport,
+        stageSize,
+        composerWidth,
+        stageSize.width < CANVAS_STACKED_CONTROLS_WIDTH ? 144 : 80,
+      )
+    : { x: 12, y: 62, maxHeight: 420 };
   const menuPosition = createMenu
     ? {
         x:
@@ -895,7 +949,9 @@ export function CanvasEditor({
   }
   return (
     <div
-      className="canvas-layout"
+      className={`canvas-layout ${isNodeDragging ? "canvas-node-dragging" : ""}`}
+      data-canvas-theme={theme}
+      data-show-image-info={Boolean(graph.showImageInfo)}
       data-canvas-keyboard-scope="true"
       ref={layout}
       tabIndex={-1}
@@ -914,8 +970,8 @@ export function CanvasEditor({
         <InfiniteCanvas
           containerRef={container}
           viewport={graph.viewport}
-          tool={tool}
-          backgroundMode="dots"
+          tool="pan"
+          backgroundMode={graph.backgroundMode || "lines"}
           onViewportChange={(viewport) =>
             onChange({ ...graphRef.current, viewport })
           }
@@ -930,6 +986,10 @@ export function CanvasEditor({
           }}
           onGestureStart={() => {
             drag.current = null;
+            resize.current = null;
+            setIsNodeDragging(false);
+            setIsResizing(false);
+            setDropTargetGroupId(null);
             setBox(null);
             cancelConnection();
             setCreateMenu(null);
@@ -946,12 +1006,10 @@ export function CanvasEditor({
               setConnectionMessage("");
               return;
             }
-            if (tool === "select") {
-              const position = world(event.clientX, event.clientY);
-              setBox({ start: position, end: position });
-              setSelected([]);
-              setSelectedEdge(null);
-            }
+            const position = world(event.clientX, event.clientY);
+            setBox({ start: position, end: position });
+            setSelected([]);
+            setSelectedEdge(null);
           }}
           onCanvasDoubleClick={(event) => {
             setComposerNodeId(null);
@@ -1015,7 +1073,7 @@ export function CanvasEditor({
               <div
                 key={node.id}
                 data-node-id={node.id}
-                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""} ${pickingReferenceFor && node.metadata?.assetId && node.id !== pickingReferenceFor ? "node-reference-pickable" : ""}`}
+                className={`canvas-node ${node.type === CanvasNodeType.Group ? "canvas-group" : ""} ${[CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Config].includes(node.type) ? "is-media-node" : ""} ${selected.includes(node.id) ? "node-selected" : ""} ${dropTargetGroupId === node.id ? "node-group-drop-target" : ""} ${connectionTarget === node.id ? "node-reference-target" : ""} ${pickingReferenceFor && node.metadata?.assetId && node.id !== pickingReferenceFor ? "node-reference-pickable" : ""}`}
                 style={{
                   left: node.position.x,
                   top: node.position.y,
@@ -1025,20 +1083,17 @@ export function CanvasEditor({
                 onPointerDown={(event) => startDrag(event, node)}
                 onClickCapture={(event) => {
                   if (!pickingReferenceFor) {
-                    if (
-                      (event.target as Element).closest("video") &&
-                      !event.ctrlKey &&
-                      !spacePressed.current &&
-                      tool !== "pan"
-                    ) {
-                      const ids = event.shiftKey
+                    if ((event.target as Element).closest("video")) {
+                      const additive =
+                        event.shiftKey || event.ctrlKey || event.metaKey;
+                      const ids = additive
                         ? selected.includes(node.id)
                           ? selected.filter((id) => id !== node.id)
                           : [...selected, node.id]
                         : [node.id];
                       setSelected(ids);
                       setSelectedEdge(null);
-                      setComposerNodeId(event.shiftKey ? null : node.id);
+                      setComposerNodeId(additive ? null : node.id);
                     }
                     return;
                   }
@@ -1099,7 +1154,22 @@ export function CanvasEditor({
                             : node.type
                     }
                   />
-                  <span>{node.title}</span>
+                  {node.type === CanvasNodeType.Group ? (
+                    <CanvasGroupLabel
+                      title={node.title}
+                      count={groupCounts.get(node.id) || 0}
+                      onRename={(title) =>
+                        commit({
+                          ...graphRef.current,
+                          nodes: graphRef.current.nodes.map((item) =>
+                            item.id === node.id ? { ...item, title } : item,
+                          ),
+                        })
+                      }
+                    />
+                  ) : (
+                    <span>{node.title}</span>
+                  )}
                   {node.type === CanvasNodeType.Config && (
                     <small className="node-generation-kind">
                       {node.metadata?.generationKind === "video"
@@ -1194,6 +1264,101 @@ export function CanvasEditor({
                     )}
                   </div>
                 )}
+                {graph.showImageInfo &&
+                  asset &&
+                  node.type === CanvasNodeType.Image && (
+                    <div className="node-media-info">
+                      <span>
+                        {asset.width > 0 && asset.height > 0
+                          ? `${asset.width} × ${asset.height}`
+                          : asset.file_name}
+                      </span>
+                      <span>
+                        {asset.content_type.replace("image/", "").toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                {node.type === CanvasNodeType.Group && (
+                  <button
+                    className="group-resize-handle"
+                    aria-label={t("调整组大小")}
+                    title={t("拖动调整大小，或使用方向键")}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.currentTarget.focus({ preventScroll: true });
+                      drag.current = null;
+                      cancelConnection();
+                      setSelected([node.id]);
+                      setIsResizing(true);
+                      resize.current = {
+                        pointerId: event.pointerId,
+                        nodeId: node.id,
+                        start: { x: event.clientX, y: event.clientY },
+                        graph: structuredClone(graphRef.current),
+                        moved: false,
+                      };
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        ![
+                          "ArrowLeft",
+                          "ArrowRight",
+                          "ArrowUp",
+                          "ArrowDown",
+                        ].includes(event.key)
+                      )
+                        return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const step = event.shiftKey ? 40 : 10;
+                      const current = graphRef.current;
+                      commit({
+                        ...current,
+                        nodes: current.nodes.map((item) =>
+                          item.id === node.id
+                            ? {
+                                ...item,
+                                width: Math.max(
+                                  120,
+                                  item.width +
+                                    (event.key === "ArrowLeft"
+                                      ? -step
+                                      : event.key === "ArrowRight"
+                                        ? step
+                                        : 0),
+                                ),
+                                height: Math.max(
+                                  80,
+                                  item.height +
+                                    (event.key === "ArrowUp"
+                                      ? -step
+                                      : event.key === "ArrowDown"
+                                        ? step
+                                        : 0),
+                                ),
+                              }
+                            : item,
+                        ),
+                      });
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 14 14"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="m3 11 8-8m-3 8 3-3"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      />
+                    </svg>
+                  </button>
+                )}
                 {canOutputReference(node) && (
                   <button
                     className={`node-port port-out ${connection?.nodeId === node.id ? "port-active" : ""}`}
@@ -1287,10 +1452,11 @@ export function CanvasEditor({
             ))}
         </InfiniteCanvas>
         {activeNode &&
-          ![CanvasNodeType.Text, CanvasNodeType.Group].includes(
-            activeNode.type,
-          ) &&
+          activeNode.type !== CanvasNodeType.Text &&
           !pickingReferenceFor &&
+          !isNodeDragging &&
+          !isResizing &&
+          !box &&
           !composerNode && (
             <CanvasNodeHoverToolbar
               node={activeNode}
@@ -1308,6 +1474,9 @@ export function CanvasEditor({
               }}
               onDuplicate={duplicate}
               onDelete={remove}
+              onUngroup={
+                activeNode.type === CanvasNodeType.Group ? ungroup : undefined
+              }
               onShowTask={
                 activeNode.metadata?.generationTaskId && onShowTask
                   ? () =>
@@ -1316,34 +1485,35 @@ export function CanvasEditor({
               }
             />
           )}
-        {composerNode && renderComposer && (
-          <div
-            className="canvas-node-composer-overlay"
-            data-canvas-no-zoom
-            data-composer-node-id={composerNode.id}
-            style={{
-              left: composerPosition.x,
-              top: composerPosition.y,
-              width: composerWidth,
-              maxHeight: Math.max(
-                120,
-                stageSize.height - composerPosition.y - 80,
-              ),
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
-          >
-            {renderComposer(composerNode, {
-              onClose: () => setComposerNodeId(null),
-              onPickReferences: () => {
-                cancelConnection();
-                setCreateMenu(null);
-                setPickingReferenceFor(composerNode.id);
-                layout.current?.focus({ preventScroll: true });
-              },
-            })}
-          </div>
-        )}
+        {composerNode &&
+          renderComposer &&
+          !isNodeDragging &&
+          !isResizing &&
+          !box && (
+            <div
+              className="canvas-node-composer-overlay"
+              data-canvas-no-zoom
+              data-composer-node-id={composerNode.id}
+              style={{
+                left: composerPosition.x,
+                top: composerPosition.y,
+                width: composerWidth,
+                maxHeight: composerPosition.maxHeight,
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
+            >
+              {renderComposer(composerNode, {
+                onClose: () => setComposerNodeId(null),
+                onPickReferences: () => {
+                  cancelConnection();
+                  setCreateMenu(null);
+                  setPickingReferenceFor(composerNode.id);
+                  layout.current?.focus({ preventScroll: true });
+                },
+              })}
+            </div>
+          )}
         {pickingReferenceFor && (
           <div
             className="canvas-reference-picking-hint"
@@ -1357,48 +1527,41 @@ export function CanvasEditor({
             </button>
           </div>
         )}
-        {selected.length > 1 && !pickingReferenceFor && (
-          <div className="canvas-selection-actions" data-canvas-no-zoom>
-            <span>{t("已选 {0} 个节点", selected.length)}</span>
-            {onCompare && selected.length > 1 && (
-              <button
-                disabled={!canCompareSelection}
-                onClick={() => onCompare(comparisonAssets)}
-              >
-                {t("对比")}
+        {selected.length > 1 &&
+          !pickingReferenceFor &&
+          !isNodeDragging &&
+          !box && (
+            <div className="canvas-selection-actions" data-canvas-no-zoom>
+              <span>{t("已选 {0} 个节点", selected.length)}</span>
+              {onCompare && selected.length > 1 && (
+                <button
+                  disabled={!canCompareSelection}
+                  onClick={() => onCompare(comparisonAssets)}
+                >
+                  {t("对比")}
+                </button>
+              )}
+              {selected.length > 1 && (
+                <button
+                  disabled={
+                    !canGroupSelectedNodes(new Set(selected), graph.nodes)
+                  }
+                  onClick={group}
+                >
+                  {t("分组")}
+                </button>
+              )}
+              {canUngroupSelectedNodes(new Set(selected), graph.nodes) && (
+                <button onClick={ungroup}>{t("解除分组")}</button>
+              )}
+              <button onClick={duplicate} title={t("复制节点")}>
+                <Icon name="copy" size={14} />
               </button>
-            )}
-            {selected.length > 1 && (
-              <button
-                disabled={
-                  !canGroupSelectedNodes(new Set(selected), graph.nodes)
-                }
-                onClick={group}
-              >
-                {t("分组")}
+              <button onClick={remove} title={t("删除选中节点")}>
+                <Icon name="trash" size={14} />
               </button>
-            )}
-            <button onClick={duplicate} title={t("复制节点")}>
-              <Icon name="copy" size={14} />
-            </button>
-            <button onClick={remove} title={t("删除选中节点")}>
-              <Icon name="trash" size={14} />
-            </button>
-          </div>
-        )}
-        <div className="canvas-reference-guide">
-          <Icon name="link" size={14} />
-          <span>
-            {t("素材 / 笔记 / 分组")} <b>→</b> {t("图片 / 视频创作")}
-          </span>
-          <button
-            onClick={() => setHelp(true)}
-            aria-label={t("查看画布操作帮助")}
-            title={t("画布操作帮助")}
-          >
-            <Icon name="info" size={15} />
-          </button>
-        </div>
+            </div>
+          )}
         {!graph.nodes.length && (
           <div className="canvas-empty">
             <span className="eyebrow">YOUR CREATIVE TABLE</span>
@@ -1420,23 +1583,21 @@ export function CanvasEditor({
                 {t("创作视频")}
               </button>
             </div>
-            <small>{t("双击空白添加节点 · 滚轮缩放 · 按住空格拖动画布")}</small>
+            <small>{t("双击空白添加节点 · 拖动空白移动 · 滚轮缩放")}</small>
           </div>
         )}
         <div className="canvas-tool-dock">
           <button
-            className={`icon-button ${tool === "select" ? "selected" : ""}`}
-            onClick={() => setTool("select")}
-            aria-label={t("选择工具 V")}
-            title={t("选择 V")}
-          >
-            <Icon name="cursor" />
-          </button>
-          <button
-            className={`icon-button ${tool === "pan" ? "selected" : ""}`}
-            onClick={() => setTool("pan")}
-            aria-label={t("平移工具 H")}
-            title={t("平移 H")}
+            className="icon-button selected"
+            onClick={() => {
+              setCreateMenu(null);
+              setPickingReferenceFor(null);
+              cancelConnection();
+              layout.current?.focus({ preventScroll: true });
+            }}
+            aria-label={t("移动画布")}
+            title={t("拖动空白移动画布，点击节点编辑")}
+            aria-pressed="true"
           >
             <Icon name="hand" />
           </button>
@@ -1475,6 +1636,14 @@ export function CanvasEditor({
             <Icon name="video" />
             <span>{t("视频")}</span>
           </button>
+          <button
+            className="icon-button"
+            onClick={() => add(CanvasNodeType.Group)}
+            aria-label={t("添加组")}
+            title={t("添加组")}
+          >
+            <Icon name="group" />
+          </button>
           <i />
           <button
             className="icon-button"
@@ -1494,18 +1663,23 @@ export function CanvasEditor({
           >
             <Icon name="redo" />
           </button>
+          <i />
+          <CanvasAppearance
+            backgroundMode={graph.backgroundMode || "lines"}
+            showImageInfo={Boolean(graph.showImageInfo)}
+            onChange={(patch) => commit({ ...graphRef.current, ...patch })}
+          />
         </div>
-        <div className="canvas-zoom">
-          <button onClick={() => zoom(1 / 1.2)} aria-label={t("缩小")}>
-            −
-          </button>
-          <button onClick={fit} title={t("适合画布")}>
-            {Math.round(graph.viewport.k * 100)}%
-          </button>
-          <button onClick={() => zoom(1.2)} aria-label={t("放大")}>
-            +
-          </button>
-        </div>
+        <CanvasViewControls
+          nodes={graph.nodes}
+          viewport={graph.viewport}
+          size={stageSize}
+          onViewportChange={(viewport) =>
+            onChange({ ...graphRef.current, viewport })
+          }
+          onFit={fit}
+          onHelp={() => setHelp(true)}
+        />
         <a
           className="canvas-attribution"
           href="https://github.com/basketikun/infinite-canvas/tree/3a6b64b602ad062b29fac66902ed18a7ef5fd9dc"
@@ -1539,134 +1713,124 @@ export function CanvasEditor({
           </div>
         )}
       </div>
-      {activeNode &&
-        [CanvasNodeType.Text, CanvasNodeType.Group].includes(
-          activeNode.type,
-        ) && (
-          <aside className="node-inspector">
-            <div className="inspector-heading">
-              <span>{t("节点属性")}</span>
-              <button
-                className="icon-button"
-                onClick={() => setSelected([])}
-                aria-label={t("关闭属性")}
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
+      {activeNode && activeNode.type === CanvasNodeType.Text && (
+        <aside className="node-inspector">
+          <div className="inspector-heading">
+            <span>{t("节点属性")}</span>
+            <button
+              className="icon-button"
+              onClick={() => setSelected([])}
+              aria-label={t("关闭属性")}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <label>
+            {t("名称")}
+            <input
+              value={activeNode.title}
+              onChange={(e) => updateNode({ title: e.target.value })}
+            />
+          </label>
+          {activeNode.type === CanvasNodeType.Text && (
             <label>
-              {t("名称")}
-              <input
-                value={activeNode.title}
-                onChange={(e) => updateNode({ title: e.target.value })}
+              {t("创作笔记")}
+              <textarea
+                rows={9}
+                value={activeNode.metadata?.content || ""}
+                onChange={(e) =>
+                  updateNode({
+                    metadata: {
+                      ...activeNode.metadata,
+                      content: e.target.value,
+                    },
+                  })
+                }
               />
             </label>
-            {activeNode.type === CanvasNodeType.Text && (
-              <label>
-                {t("创作笔记")}
-                <textarea
-                  rows={9}
-                  value={activeNode.metadata?.content || ""}
-                  onChange={(e) =>
-                    updateNode({
-                      metadata: {
-                        ...activeNode.metadata,
-                        content: e.target.value,
-                      },
-                    })
-                  }
-                />
-              </label>
-            )}
-            <div className="inspector-dimensions">
-              <label>
-                {t("宽")}
-                <input
-                  type="number"
-                  min="120"
-                  max="2000"
-                  value={activeNode.width}
-                  onChange={(e) =>
-                    updateNode({
-                      width: Math.min(
-                        2000,
-                        Math.max(120, Number(e.target.value)),
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                {t("高")}
-                <input
-                  type="number"
-                  min="80"
-                  max="2000"
-                  value={activeNode.height}
-                  onChange={(e) =>
-                    updateNode({
-                      height: Math.min(
-                        2000,
-                        Math.max(80, Number(e.target.value)),
-                      ),
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <div className="inspector-actions">
-              {onCompare && (
-                <button
-                  className="button secondary"
-                  disabled={!canCompareSelection}
-                  title={t("多选至少两个不同且可用的同类图片或视频素材")}
-                  onClick={() => {
-                    if (canCompareSelection) onCompare(comparisonAssets);
-                  }}
-                >
-                  {t("比较选中素材")}
-                </button>
-              )}
-              <button className="button secondary" onClick={duplicate}>
-                <Icon name="copy" size={15} />
-                {t("复制节点")}
-              </button>
+          )}
+          <div className="inspector-dimensions">
+            <label>
+              {t("宽")}
+              <input
+                type="number"
+                min="120"
+                max="2000"
+                value={activeNode.width}
+                onChange={(e) =>
+                  updateNode({
+                    width: Math.min(
+                      2000,
+                      Math.max(120, Number(e.target.value)),
+                    ),
+                  })
+                }
+              />
+            </label>
+            <label>
+              {t("高")}
+              <input
+                type="number"
+                min="80"
+                max="2000"
+                value={activeNode.height}
+                onChange={(e) =>
+                  updateNode({
+                    height: Math.min(
+                      2000,
+                      Math.max(80, Number(e.target.value)),
+                    ),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <div className="inspector-actions">
+            {onCompare && (
               <button
                 className="button secondary"
-                disabled={
-                  !canGroupSelectedNodes(new Set(selected), graph.nodes)
-                }
-                onClick={group}
+                disabled={!canCompareSelection}
+                title={t("多选至少两个不同且可用的同类图片或视频素材")}
+                onClick={() => {
+                  if (canCompareSelection) onCompare(comparisonAssets);
+                }}
               >
-                <Icon name="group" size={15} />
-                {t("建立分组")}
+                {t("比较选中素材")}
               </button>
-              <button
-                className="button secondary"
-                onClick={ungroup}
-                disabled={
-                  !canUngroupSelectedNodes(new Set(selected), graph.nodes)
-                }
-              >
-                {t("解除分组")}
-              </button>
-              <button className="button subtle danger-text" onClick={remove}>
-                <Icon name="trash" size={15} />
-                {t("删除选中节点")}
-              </button>
-            </div>
-            <p className="inspector-note">
-              {t(
-                "节点操作只修改画布布局与引用。历史生成、作品与积分记录由任务服务保存。",
-              )}
-            </p>
-            {activeNode.type === CanvasNodeType.Group && (
-              <p className="inspector-note">
-                {t("分组引用会包含组内素材与笔记。删除分组框保留内部节点。")}
-              </p>
             )}
-          </aside>
-        )}
+            <button className="button secondary" onClick={duplicate}>
+              <Icon name="copy" size={15} />
+              {t("复制节点")}
+            </button>
+            <button
+              className="button secondary"
+              disabled={!canGroupSelectedNodes(new Set(selected), graph.nodes)}
+              onClick={group}
+            >
+              <Icon name="group" size={15} />
+              {t("建立分组")}
+            </button>
+            <button
+              className="button secondary"
+              onClick={ungroup}
+              disabled={
+                !canUngroupSelectedNodes(new Set(selected), graph.nodes)
+              }
+            >
+              {t("解除分组")}
+            </button>
+            <button className="button subtle danger-text" onClick={remove}>
+              <Icon name="trash" size={15} />
+              {t("删除选中节点")}
+            </button>
+          </div>
+          <p className="inspector-note">
+            {t(
+              "节点操作只修改画布布局与引用。历史生成、作品与积分记录由任务服务保存。",
+            )}
+          </p>
+        </aside>
+      )}
       {activeEdge && edgeFrom && edgeTo && (
         <aside className="node-inspector edge-inspector">
           <div className="inspector-heading">
@@ -1730,9 +1894,17 @@ export function CanvasEditor({
             </p>
             <dl>
               <dt>{t("选择 / 多选")}</dt>
-              <dd>{t("点击节点 · Shift 点击 · 在空白处框选")}</dd>
+              <dd>
+                {t(
+                  "点击节点 · Shift / Ctrl / ⌘ 点击多选 · 按住 Ctrl 或空格拖动空白框选",
+                )}
+              </dd>
               <dt>{t("平移 / 缩放")}</dt>
-              <dd>{t("H 或按住空格拖动 · 滚轮 · 双指缩放")}</dd>
+              <dd>
+                {t("拖动空白或按住鼠标中键移动 · 滚轮缩放 · 触屏双指缩放")}
+              </dd>
+              <dt>{t("分组 / 解组")}</dt>
+              <dd>Ctrl / ⌘ G · Ctrl / ⌘ Shift G</dd>
               <dt>{t("撤销 / 重做")}</dt>
               <dd>Ctrl / ⌘ Z · Ctrl / ⌘ Shift Z</dd>
               <dt>{t("复制 / 删除")}</dt>

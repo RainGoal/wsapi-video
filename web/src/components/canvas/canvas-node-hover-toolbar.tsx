@@ -18,6 +18,7 @@ export function CanvasNodeHoverToolbar({
   onDuplicate,
   onDelete,
   onShowTask,
+  onUngroup,
 }: {
   node: CanvasNodeData;
   viewport: ViewportTransform;
@@ -28,6 +29,7 @@ export function CanvasNodeHoverToolbar({
   onDuplicate: () => void;
   onDelete: () => void;
   onShowTask?: () => void;
+  onUngroup?: () => void;
 }) {
   const left = Math.max(
     120,
@@ -70,6 +72,9 @@ export function CanvasNodeHoverToolbar({
           icon="tasks"
           onClick={onShowTask}
         />
+      )}
+      {onUngroup && (
+        <ToolbarAction title={t("解除分组")} icon="group" onClick={onUngroup} />
       )}
       <ToolbarAction title={t("复制节点")} icon="copy" onClick={onDuplicate} />
       <ToolbarAction

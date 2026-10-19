@@ -61,12 +61,11 @@ export function snapNodesIntoGroup(
     (node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group,
   );
   if (!movingNodes.length) return nodes;
-  const pad = 24;
   const bounds = nodeBounds(movingNodes);
-  const left = group.position.x + pad;
-  const top = group.position.y + pad;
-  const right = group.position.x + group.width - pad;
-  const bottom = group.position.y + group.height - pad;
+  const left = group.position.x + GROUP_WRAP_PADDING;
+  const top = group.position.y + GROUP_WRAP_TOP_PADDING;
+  const right = group.position.x + group.width - GROUP_WRAP_PADDING;
+  const bottom = group.position.y + group.height - GROUP_WRAP_PADDING;
   const dx =
     bounds.right - bounds.left > right - left
       ? left - bounds.left
@@ -95,7 +94,8 @@ export function snapNodesIntoGroup(
 }
 
 export const GROUP_WRAP_PADDING = 24;
-export const GROUP_WRAP_TOP_PADDING = 52;
+// Leave room for both the group label and the media label above each member.
+export const GROUP_WRAP_TOP_PADDING = 76;
 
 function selectedGroupIds(selectedIds: Set<string>, nodes: CanvasNodeData[]) {
   return new Set(
@@ -153,7 +153,7 @@ export function canUngroupSelectedNodes(
   );
 }
 
-function emptyGroupIds(nodes: CanvasNodeData[], keepId?: string) {
+function emptyGroupIds(nodes: CanvasNodeData[], affectedIds: Set<string>) {
   const used = new Set(
     nodes.flatMap((node) =>
       node.type !== CanvasNodeType.Group && node.metadata?.groupId
@@ -166,7 +166,7 @@ function emptyGroupIds(nodes: CanvasNodeData[], keepId?: string) {
       .filter(
         (node) =>
           node.type === CanvasNodeType.Group &&
-          node.id !== keepId &&
+          affectedIds.has(node.id) &&
           !used.has(node.id),
       )
       .map((node) => node.id),
@@ -197,6 +197,11 @@ export function applyGroupSelection(
   const members = collectGroupMemberNodes(selectedIds, nodes);
   if (members.length < 2) return null;
   const memberIds = new Set(members.map((node) => node.id));
+  const previousGroupIds = new Set(
+    members.flatMap((node) =>
+      node.metadata?.groupId ? [node.metadata.groupId] : [],
+    ),
+  );
   const flattenedGroupIds = selectedGroupIds(selectedIds, nodes);
   const updated = nodes
     .filter((node) => !flattenedGroupIds.has(node.id))
@@ -213,7 +218,10 @@ export function applyGroupSelection(
   const next = withoutRemoved(
     withGroup,
     connections,
-    new Set([...flattenedGroupIds, ...emptyGroupIds(withGroup, group.id)]),
+    new Set([
+      ...flattenedGroupIds,
+      ...emptyGroupIds(withGroup, previousGroupIds),
+    ]),
   );
   return { ...next, selectedIds: [group.id] };
 }
@@ -230,6 +238,7 @@ export function applyUngroupSelection(
   )
     return null;
   const releasedIds = new Set<string>();
+  const previousGroupIds = new Set<string>();
   const updated = nodes
     .filter((node) => !flattenedGroupIds.has(node.id))
     .map((node) => {
@@ -238,12 +247,16 @@ export function applyUngroupSelection(
       if (!flattenedGroupIds.has(groupId) && !selectedIds.has(node.id))
         return node;
       releasedIds.add(node.id);
+      previousGroupIds.add(groupId);
       return { ...node, metadata: { ...node.metadata, groupId: undefined } };
     });
   const next = withoutRemoved(
     updated,
     connections,
-    new Set([...flattenedGroupIds, ...emptyGroupIds(updated)]),
+    new Set([
+      ...flattenedGroupIds,
+      ...emptyGroupIds(updated, previousGroupIds),
+    ]),
   );
   return {
     ...next,

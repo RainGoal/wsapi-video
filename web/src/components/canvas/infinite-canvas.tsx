@@ -178,7 +178,8 @@ export function InfiniteCanvas({
         : "select"
       : tool;
     const shouldPan =
-      event.button === 1 || (event.button === 0 && activeTool === "pan");
+      event.button === 1 ||
+      (event.button === 0 && activeTool === "pan" && isBackgroundClick);
 
     if (shouldPan) {
       event.preventDefault();
