@@ -854,6 +854,13 @@ const english: Record<string, string> = {
   项目资料已更新: "Project details updated",
   项目还没有素材: "No project assets yet",
   预览素材: "Preview asset",
+  播放视频: "Play video",
+  暂停视频: "Pause video",
+  视频播放进度: "Video playback progress",
+  开启声音: "Unmute video",
+  静音视频: "Mute video",
+  "视频未能播放，请重试或打开预览":
+    "Video could not play. Try again or open the preview.",
   首帧: "First frame",
   "验证你的邮箱。": "Verify your email.",
   验证邮箱: "Verify email",

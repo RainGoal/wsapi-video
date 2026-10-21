@@ -1,0 +1,81 @@
+.canvas-video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--canvas-node, #131a10);
+}
+.canvas-video > video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.canvas-video-controls {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px 6px;
+  color: #fff;
+  background: linear-gradient(transparent, #000b);
+  cursor: default;
+}
+.canvas-video-controls > button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 28px;
+  padding: 4px;
+  color: inherit;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+}
+.canvas-video-controls > button:hover {
+  background: #ffffff26;
+}
+.canvas-video-controls > button > svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.canvas-video-controls > button > svg[fill="none"] {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.canvas-layout .canvas-video-controls > input[type="range"] {
+  flex: 1;
+  min-width: 24px;
+  width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  accent-color: var(--amber, #d7ab6a);
+}
+.canvas-video-controls > :is(button, input):focus-visible {
+  outline: 2px solid var(--amber, #d7ab6a);
+  outline-offset: 1px;
+}
+.canvas-video-time {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.canvas-video-play-error {
+  position: absolute;
+  inset: 8px 8px auto;
+  padding: 5px 8px;
+  color: #fff;
+  background: #000b;
+  font-size: 11px;
+  pointer-events: none;
+}

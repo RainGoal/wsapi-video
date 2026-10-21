@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InfiniteCanvas } from "./components/canvas/infinite-canvas";
 import { CanvasNodePlaceholder } from "./components/canvas/canvas-node-placeholder";
 import { CanvasNodeHoverToolbar } from "./components/canvas/canvas-node-hover-toolbar";
+import { CanvasVideo } from "./components/canvas/canvas-video";
 import type { ReferenceRole } from "./components/canvas/canvas-node-reference-bar";
 import { CanvasAppearance } from "./components/canvas/canvas-appearance";
 import { CanvasViewControls } from "./components/canvas/canvas-view-controls";
@@ -1202,6 +1203,7 @@ export function CanvasEditor({
                       <AssetVisual
                         asset={asset}
                         controls={asset.kind === "video"}
+                        canvasPlayback
                       />
                     ) : node.metadata?.generationTaskId ? (
                       <div
@@ -1975,19 +1977,30 @@ function generationNodeStatus(node: CanvasNodeData) {
 export function AssetVisual({
   asset,
   controls = false,
+  canvasPlayback = false,
 }: {
   asset: Asset;
   controls?: boolean;
+  canvasPlayback?: boolean;
 }) {
   return (
     <AssetMedia
       key={[asset.id, asset.kind, asset.preview_url, asset.url].join("|")}
       asset={asset}
       controls={controls}
+      canvasPlayback={canvasPlayback}
     />
   );
 }
-function AssetMedia({ asset, controls }: { asset: Asset; controls: boolean }) {
+function AssetMedia({
+  asset,
+  controls,
+  canvasPlayback,
+}: {
+  asset: Asset;
+  controls: boolean;
+  canvasPlayback: boolean;
+}) {
   const [attempt, setAttempt] = useState(0);
   const [failedAttempt, setFailedAttempt] = useState<number | null>(null);
   const src =
@@ -2015,6 +2028,8 @@ function AssetMedia({ asset, controls }: { asset: Asset; controls: boolean }) {
         )}
       </span>
     );
+  if (asset.kind === "video" && canvasPlayback)
+    return <CanvasVideo key={attempt} src={src} onError={onError} />;
   return asset.kind === "video" ? (
     <video
       key={attempt}
