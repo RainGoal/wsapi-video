@@ -17,6 +17,7 @@ type Capabilities struct {
 	SupportsAudio               bool     `json:"supports_audio"`
 	SupportsFrames              bool     `json:"supports_frames"`
 	SupportsCancel              bool     `json:"supports_cancel"`
+	SupportsProductSwap         bool     `json:"supports_product_swap,omitempty"`
 	MaxReferenceDurationSeconds int      `json:"max_reference_duration_seconds,omitempty"`
 	MaxReferenceBytes           int64    `json:"max_reference_bytes,omitempty"`
 	MaxReferenceWidth           int      `json:"max_reference_width,omitempty"`
@@ -47,19 +48,20 @@ type PriceBreakdown struct {
 	TotalCredits int64  `json:"total_credits"`
 }
 type QuoteInput struct {
-	ProjectID         string   `json:"project_id"`
-	ShotID            string   `json:"shot_id,omitempty"`
-	ProductID         string   `json:"product_id"`
-	Prompt            string   `json:"prompt"`
-	Duration          int      `json:"duration,omitempty"`
-	Resolution        string   `json:"resolution,omitempty"`
-	AspectRatio       string   `json:"aspect_ratio,omitempty"`
-	Size              string   `json:"size,omitempty"`
-	Quality           string   `json:"quality,omitempty"`
-	Audio             *bool    `json:"audio,omitempty"`
-	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
-	StartFrameAssetID string   `json:"start_frame_asset_id,omitempty"`
-	EndFrameAssetID   string   `json:"end_frame_asset_id,omitempty"`
+	ProjectID         string            `json:"project_id"`
+	ShotID            string            `json:"shot_id,omitempty"`
+	ProductID         string            `json:"product_id"`
+	Prompt            string            `json:"prompt"`
+	Duration          int               `json:"duration,omitempty"`
+	Resolution        string            `json:"resolution,omitempty"`
+	AspectRatio       string            `json:"aspect_ratio,omitempty"`
+	Size              string            `json:"size,omitempty"`
+	Quality           string            `json:"quality,omitempty"`
+	Audio             *bool             `json:"audio,omitempty"`
+	ReferenceAssetIDs []string          `json:"reference_asset_ids,omitempty"`
+	StartFrameAssetID string            `json:"start_frame_asset_id,omitempty"`
+	EndFrameAssetID   string            `json:"end_frame_asset_id,omitempty"`
+	ProductSwap       *ProductSwapInput `json:"product_swap,omitempty"`
 }
 type Quote struct {
 	ID        string          `json:"id"`
@@ -69,6 +71,7 @@ type Quote struct {
 	InputHash string          `json:"input_hash"`
 	ExpiresAt time.Time       `json:"expires_at"`
 	Demo      bool            `json:"demo"`
+	Prompt    string          `json:"prompt,omitempty"`
 }
 type Task struct {
 	ID                string         `json:"id"`

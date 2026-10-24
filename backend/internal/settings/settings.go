@@ -215,6 +215,8 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	v.Media.VideoKeyConfigured = v.Media.VideoKey != ""
 	v.Media.ImageKey = ""
 	v.Media.VideoKey = ""
+	v.Media.AnalysisKeyConfigured = v.Media.AnalysisKey != ""
+	v.Media.AnalysisKey = ""
 	v.Payment.KeyConfigured = v.Payment.Key != ""
 	v.Payment.Key = ""
 	v.SMTP.PasswordConfigured = v.SMTP.Password != ""
@@ -227,7 +229,7 @@ func (s *Service) View(ctx context.Context) (View, error) {
 	return View{Revision: st.Revision, UpdatedAt: st.UpdatedAt, Settings: v, Readiness: s.Ready(st)}, err
 }
 func secretFields(v *Settings) map[string]*string {
-	return map[string]*string{"media.image_key": &v.Media.ImageKey, "media.video_key": &v.Media.VideoKey, "payment.key": &v.Payment.Key, "smtp.password": &v.SMTP.Password, "storage.access_key": &v.Storage.AccessKey, "storage.secret_key": &v.Storage.SecretKey}
+	return map[string]*string{"media.image_key": &v.Media.ImageKey, "media.video_key": &v.Media.VideoKey, "media.analysis_key": &v.Media.AnalysisKey, "payment.key": &v.Payment.Key, "smtp.password": &v.SMTP.Password, "storage.access_key": &v.Storage.AccessKey, "storage.secret_key": &v.Storage.SecretKey}
 }
 func (s *Service) Save(ctx context.Context, actor string, in Update) error {
 	in.Settings.Site.Brand = strings.TrimSpace(in.Settings.Site.Brand)
@@ -238,6 +240,7 @@ func (s *Service) Save(ctx context.Context, actor string, in Update) error {
 	in.Settings.Site.SubmissionRecoveryPolicy = strings.TrimSpace(in.Settings.Site.SubmissionRecoveryPolicy)
 	in.Settings.Site.RefundPolicy = strings.TrimSpace(in.Settings.Site.RefundPolicy)
 	in.Settings.Media.Origin = strings.TrimRight(strings.TrimSpace(in.Settings.Media.Origin), "/")
+	in.Settings.Media.AnalysisModel = strings.TrimSpace(in.Settings.Media.AnalysisModel)
 	for i, o := range in.Settings.Media.OutputOrigins {
 		in.Settings.Media.OutputOrigins[i] = strings.TrimRight(strings.TrimSpace(o), "/")
 	}
@@ -292,6 +295,7 @@ func (s *Service) Save(ctx context.Context, actor string, in Update) error {
 	// Read-only display flags are never persisted or used for readiness.
 	in.Settings.Media.ImageKeyConfigured = false
 	in.Settings.Media.VideoKeyConfigured = false
+	in.Settings.Media.AnalysisKeyConfigured = false
 	in.Settings.Payment.KeyConfigured = false
 	in.Settings.SMTP.PasswordConfigured = false
 	in.Settings.Storage.AccessKeyConfigured = false

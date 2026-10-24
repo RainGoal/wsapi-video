@@ -61,6 +61,7 @@ func New(db *pgxpool.Pool, cfg config.Config, a AssetService) *Service {
 	return &Service{db: db, cfg: cfg, assets: a, gateway: g}
 }
 func (s *Service) Register(mux *http.ServeMux, protect func(http.Handler) http.Handler, admin func(http.Handler) http.Handler) {
+	s.registerProductSwap(mux, protect)
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, protect(h)) }
 	user("GET /api/v1/model-products", s.products)
 	user("POST /api/v1/quotes", s.quote)
@@ -341,6 +342,10 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err = s.prepareProductSwap(r.Context(), u.ID, &in, p); err != nil {
+		invalid(w, err.Error())
+		return
+	}
 	if err = validateInput(&in, p); err != nil {
 		invalid(w, err.Error())
 		return
@@ -367,6 +372,9 @@ func (s *Service) quote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := Quote{ID: core.ID("quote"), ProductID: p.ID, Credits: credits, Pricing: pricing, InputHash: digest(in), ExpiresAt: time.Now().UTC().Add(5 * time.Minute), Demo: p.Demo}
+	if in.ProductSwap != nil {
+		q.Prompt = in.Prompt
+	}
 	ib, _ := json.Marshal(in)
 	pb, _ := json.Marshal(p)
 	_, err = s.db.Exec(r.Context(), "INSERT INTO quotes(id,user_id,project_id,product_id,input,input_hash,product_snapshot,credits,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", q.ID, u.ID, in.ProjectID, p.ID, ib, q.InputHash, pb, q.Credits, q.ExpiresAt)
@@ -534,6 +542,10 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 	var in QuoteInput
 	if json.Unmarshal(pRaw, &p) != nil || json.Unmarshal(inRaw, &in) != nil {
 		dbError(w, errors.New("invalid snapshot"))
+		return
+	}
+	if !validSwapSnapshot(in, p) {
+		invalid(w, "商品替换报价快照无效，请重新报价")
 		return
 	}
 	if err = validateVideoSpecifications(in, p); err != nil {

@@ -37,6 +37,7 @@ services:
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       WEB_DIR: /app/web
       FFPROBE_PATH: /usr/bin/ffprobe
+      FFMPEG_PATH: /usr/bin/ffmpeg
       STORAGE_DRIVER: s3
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-auto}

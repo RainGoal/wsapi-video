@@ -42,6 +42,9 @@ export function productCapabilities(
           supports_audio: false,
           supports_frames: false,
           supports_cancel: false,
+          ...(capabilities.supports_product_swap
+            ? { supports_product_swap: false }
+            : {}),
         }
       : {}),
   };
@@ -122,6 +125,7 @@ function definition(product: Product) {
     supports_audio: !!c.supports_audio,
     supports_frames: !!c.supports_frames,
     supports_cancel: !!c.supports_cancel,
+    supports_product_swap: !!c.supports_product_swap,
     max_reference_duration_seconds: c.max_reference_duration_seconds || 0,
     max_reference_bytes: c.max_reference_bytes || 0,
     max_reference_width: c.max_reference_width || 0,

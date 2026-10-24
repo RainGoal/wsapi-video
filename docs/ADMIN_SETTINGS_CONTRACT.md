@@ -10,7 +10,7 @@
   "updated_at": null,
   "settings": {
     "site": {"brand":"FRAME STUDIO","registration_enabled":true,"support_email":"","retention_policy":"","storage_quota_policy":"","cleanup_policy":"","submission_recovery_policy":"","refund_policy":""},
-    "media": {"origin":"","output_origins":[],"image_key_configured":false,"video_key_configured":false},
+    "media": {"origin":"","output_origins":[],"image_key_configured":false,"video_key_configured":false,"analysis_model":"","analysis_key_configured":false},
     "payment": {"enabled":false,"origin":"","pid":"","notify_url":"https://studio.example/api/v1/payment/notify/easypay","return_url":"https://studio.example/wallet","key_configured":false},
     "smtp": {"host":"","port":587,"username":"","from":"","password_configured":false},
     "storage": {"driver":"s3","endpoint":"","region":"auto","bucket":"","access_key_configured":false,"secret_key_configured":false,"location_locked":false}
@@ -19,7 +19,7 @@
 }
 ```
 
-`PUT /api/v1/admin/settings` 接收 `{revision,reason,settings,clear_secrets?:string[]}`。`settings` 包含全部分区的非秘密字段。秘密字段为 `media.image_key` / `media.video_key` / `payment.key` / `smtp.password` / `storage.access_key` / `storage.secret_key`，省略或空字符串保留旧值；非空替换；仅 `clear_secrets` 列出的字段会删除。禁止把掩码作为秘密回传。响应与 GET 相同，不返回任何秘密或其末位。
+`PUT /api/v1/admin/settings` 接收 `{revision,reason,settings,clear_secrets?:string[]}`。`settings` 包含全部分区的非秘密字段。秘密字段为 `media.image_key` / `media.video_key` / `media.analysis_key` / `payment.key` / `smtp.password` / `storage.access_key` / `storage.secret_key`，省略或空字符串保留旧值；非空替换；仅 `clear_secrets` 列出的字段会删除。禁止把掩码作为秘密回传。响应与 GET 相同，不返回任何秘密或其末位。可选 `media.analysis_model` 指定同一 Sub2API 网关下经验证支持图像输入的识图模型；模型和独立识图 Key 均配置后，商品替换页才开放分析。保存配置或现有网关检测不会调用识图模型，不代表分析权限已验收。
 
 保存原子生效并记录只含变更字段名称的管理员审计。过期 revision 返回 HTTP 409 `{code:"settings_conflict",message:"..."}`。字段验证返回 HTTP 422 `{code:"invalid_settings",message:"...",data:{fields:{"media.origin":"必须使用固定 HTTPS Origin"}}}`。存储已有资产后不允许切换 driver/endpoint/bucket/region；同位置凭证可以轮换。已有媒体任务和支付订单保留原配置快照，不会改用新商户/网关或密钥。
 

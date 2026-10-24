@@ -91,6 +91,15 @@ func (s *Service) ReferenceURL(ctx context.Context, userID, assetID string) (str
 	return s.blobs.SignedURL(ctx, a.ObjectKey, 6*time.Hour)
 }
 
+// OpenOwned never accepts a URL or storage key from the caller.
+func (s *Service) OpenOwned(ctx context.Context, userID, assetID string) (io.ReadCloser, error) {
+	a, err := s.Resolve(ctx, userID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	return s.blobs.Open(ctx, a.ObjectKey)
+}
+
 // Archived resolves a previously committed task archive only after verifying
 // its stored bytes, so crash recovery never settles a missing or partial object.
 func (s *Service) Archived(ctx context.Context, userID, projectID, taskID string) (Asset, error) {

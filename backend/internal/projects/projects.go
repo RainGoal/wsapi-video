@@ -97,7 +97,7 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, 201, p)
 }
 func (s *Service) get(w http.ResponseWriter, r *http.Request) {
-	p, err := scanProject(s.db.QueryRow(r.Context(), `SELECT `+projectFields+` FROM projects WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL`, r.PathValue("id"), core.UserFrom(r.Context()).ID))
+	p, err := scanProject(s.db.QueryRow(r.Context(), `SELECT `+projectFields+` FROM projects WHERE id=$1 AND user_id=$2 AND workspace_kind='' AND deleted_at IS NULL`, r.PathValue("id"), core.UserFrom(r.Context()).ID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		notFound(w)
 		return
@@ -219,7 +219,7 @@ func (s *Service) remove(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, 200, map[string]bool{"ok": true})
 }
 func lockedProject(ctx context.Context, tx pgx.Tx, id, userID string) (Project, error) {
-	return scanProject(tx.QueryRow(ctx, `SELECT `+projectFields+` FROM projects WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL FOR UPDATE`, id, userID))
+	return scanProject(tx.QueryRow(ctx, `SELECT `+projectFields+` FROM projects WHERE id=$1 AND user_id=$2 AND workspace_kind='' AND deleted_at IS NULL FOR UPDATE`, id, userID))
 }
 func projectError(w http.ResponseWriter, err error) bool {
 	if errors.Is(err, pgx.ErrNoRows) {

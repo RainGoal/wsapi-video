@@ -373,6 +373,15 @@ func (s *Service) archive(ctx context.Context, t Task) {
 		return
 	}
 	defer body.Close()
+	if t.Input.ProductSwap != nil && t.Input.ProductSwap.AudioMode != "generated" {
+		processed, processErr := s.processSwapAudio(ctx, t, body)
+		if processErr != nil {
+			s.holdReview(ctx, t, "audio_processing_failed", "视频已生成，但音轨合成失败或时长不匹配，积分保持冻结，等待核查；不会重新生成")
+			return
+		}
+		defer processed.Close()
+		body, contentType = processed, "video/mp4"
+	}
 	a, err := s.assets.Archive(ctx, t.UserID, t.ProjectID, t.ID, fileName, contentType, body)
 	if err != nil {
 		if time.Since(t.CreatedAt) > s.reviewAfter() {

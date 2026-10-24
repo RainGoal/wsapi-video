@@ -87,6 +87,7 @@ export type Capabilities = {
   supports_audio: boolean;
   supports_frames: boolean;
   supports_cancel: boolean;
+  supports_product_swap?: boolean;
   max_reference_duration_seconds?: number;
   max_reference_bytes?: number;
   max_reference_width?: number;
@@ -124,6 +125,7 @@ export type Quote = {
   input_hash: string;
   demo: boolean;
   pricing?: PricingBreakdown;
+  prompt?: string;
 };
 export type Task = {
   id: string;

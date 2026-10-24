@@ -23,7 +23,7 @@ type Config struct {
 	SMTPUsername, SMTPPassword, SMTPFrom                                                            string
 	StorageDriver, StorageDir, S3Endpoint, S3Region, S3Bucket, S3AccessKey, S3SecretKey             string
 	MaxUploadBytes, MaxMediaBytes                                                                   int64
-	FFprobePath                                                                                     string
+	FFprobePath, FFmpegPath                                                                         string
 	Sub2APIOrigin                                                                                   string
 	MediaKeys                                                                                       map[string]string
 	ImageCredential, VideoCredential                                                                string
@@ -42,7 +42,7 @@ func Load() (Config, error) {
 		SessionTTL: 14 * 24 * time.Hour, StorageDriver: env("STORAGE_DRIVER", "local"), StorageDir: env("STORAGE_DIR", "../.runtime/media"),
 		SMTPHost: os.Getenv("SMTP_HOST"), SMTPPort: number("SMTP_PORT", 587), SMTPUsername: os.Getenv("SMTP_USERNAME"), SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM"),
 		S3Endpoint: os.Getenv("S3_ENDPOINT"), S3Region: env("S3_REGION", "auto"), S3Bucket: os.Getenv("S3_BUCKET"), S3AccessKey: os.Getenv("S3_ACCESS_KEY"), S3SecretKey: os.Getenv("S3_SECRET_KEY"),
-		MaxUploadBytes: int64(number("MAX_UPLOAD_MIB", 256)) << 20, MaxMediaBytes: int64(number("MAX_MEDIA_MIB", 512)) << 20, FFprobePath: env("FFPROBE_PATH", "ffprobe"),
+		MaxUploadBytes: int64(number("MAX_UPLOAD_MIB", 256)) << 20, MaxMediaBytes: int64(number("MAX_MEDIA_MIB", 512)) << 20, FFprobePath: env("FFPROBE_PATH", "ffprobe"), FFmpegPath: env("FFMPEG_PATH", "ffmpeg"),
 		Sub2APIOrigin: strings.TrimRight(os.Getenv("SUB2API_ORIGIN"), "/"), MediaKeys: map[string]string{}, ImageCredential: env("IMAGE_CREDENTIAL_REF", "image-v1"), VideoCredential: env("VIDEO_CREDENTIAL_REF", "video-v1"),
 		MediaPollInterval: 5 * time.Second, WorkerLease: 2 * time.Minute, TaskReviewAfter: 24 * time.Hour,
 		EasyPayOrigin: strings.TrimRight(os.Getenv("EASYPAY_ORIGIN"), "/"), EasyPayPID: os.Getenv("EASYPAY_PID"), EasyPayKey: os.Getenv("EASYPAY_KEY"), EasyPayCredentialRef: env("EASYPAY_CREDENTIAL_REF", "easypay-v1"), EasyPayKeys: map[string]string{},

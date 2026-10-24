@@ -25,6 +25,8 @@ type Settings = {
     output_origins: string[];
     image_key_configured?: boolean;
     video_key_configured?: boolean;
+    analysis_model?: string;
+    analysis_key_configured?: boolean;
   };
   payment: {
     enabled: boolean;
@@ -60,6 +62,7 @@ type SettingsDocument = {
 type SecretName =
   | "media.image_key"
   | "media.video_key"
+  | "media.analysis_key"
   | "payment.key"
   | "smtp.password"
   | "storage.access_key"
@@ -511,6 +514,25 @@ export function SettingsPage() {
                 "media.video_key",
                 a("视频服务 Key", "Video service key"),
                 draft.media.video_key_configured,
+              )}
+              {input(
+                "media",
+                "analysis_model",
+                a(
+                  "商品替换识图模型（可选）",
+                  "Product replacement vision model (optional)",
+                ),
+                {
+                  hint: a(
+                    "填写网关已验证支持图像输入的模型 ID，使用同一 Sub2API 的 /v1/chat/completions。分析可能产生网关费用。留空关闭识图。",
+                    "Use a verified image-input model ID on the same Sub2API /v1/chat/completions endpoint. Analysis may incur gateway costs. Leave blank to disable.",
+                  ),
+                },
+              )}
+              {secret(
+                "media.analysis_key",
+                a("识图服务 Key（独立权限）", "Vision service key"),
+                draft.media.analysis_key_configured,
               )}
             </>
           )}

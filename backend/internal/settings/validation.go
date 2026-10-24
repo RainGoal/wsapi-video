@@ -47,8 +47,14 @@ func (s *Service) validate(v Settings) FieldErrors {
 			e["media.output_origins"] = "输出地址必须是固定 HTTPS Origin"
 		}
 	}
-	if v.Media.Origin == "" && (v.Media.ImageKey != "" || v.Media.VideoKey != "") {
+	if v.Media.Origin == "" && (v.Media.ImageKey != "" || v.Media.VideoKey != "" || v.Media.AnalysisKey != "") {
 		e["media.origin"] = "填写凭证时必须配置网关地址"
+	}
+	if len(v.Media.AnalysisModel) > 200 || strings.ContainsAny(v.Media.AnalysisModel, "\r\n\x00") {
+		e["media.analysis_model"] = "识图模型标识最多 200 字节，不能包含控制字符"
+	}
+	if v.Media.AnalysisKey != "" && strings.TrimSpace(v.Media.AnalysisModel) == "" {
+		e["media.analysis_model"] = "配置识图凭证时必须填写已验证支持图像输入的模型标识"
 	}
 	if v.Payment.Origin != "" && payments.ValidateBaseURL(v.Payment.Origin, false) != nil {
 		e["payment.origin"] = "支付网关须为 HTTPS 基础地址，可含 /epay/ 等路径前缀，不含凭证、查询参数或片段"

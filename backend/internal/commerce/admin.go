@@ -25,6 +25,9 @@ func (s *Service) adminProducts(w http.ResponseWriter, r *http.Request) {
 }
 func validateProduct(p Product) bool {
 	c := p.Capabilities
+	if c.SupportsProductSwap && !productSwapCapable(p) {
+		return false
+	}
 	if c.MaxReferenceDurationSeconds < 0 || c.MaxReferenceDurationSeconds > 86400 || c.MaxReferenceBytes < 0 || c.MaxReferenceBytes > 1<<40 || c.MaxReferenceWidth < 0 || c.MaxReferenceWidth > 32768 || c.MaxReferenceHeight < 0 || c.MaxReferenceHeight > 32768 {
 		return false
 	}

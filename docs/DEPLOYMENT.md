@@ -55,7 +55,16 @@ docker compose --env-file deploy/.env.production ps
 
 第一次拉取前确认第 6 节的 GHCR 访问权限。需要在服务器自行构建时，改用 `docker compose --env-file deploy/.env.production -f deploy/compose.yaml up --build -d`；这是可选方式，不是默认发布流程。
 
-数据库只有命名持久卷，没有向宿主机发布端口。数据库健康检查使用 TCP `127.0.0.1`，避免把初始化过程中临时 Unix socket 当成启动完成；应用等待数据库 healthy 后自动执行带校验和的事务迁移，并创建初装管理员。初装缺少有效管理员时拒绝启动。镜像以 UID 10001 非 root 运行，含 CA、curl 和 ffprobe；Compose 限制额外权限，使用 init 管理子进程，停机预留 30 秒，应用内部 HTTP 关闭窗口为 20 秒。
+数据库只有命名持久卷，没有向宿主机发布端口。数据库健康检查使用 TCP `127.0.0.1`，避免把初始化过程中临时 Unix socket 当成启动完成；应用等待数据库 healthy 后自动执行带校验和的事务迁移，并创建初装管理员。初装缺少有效管理员时拒绝启动。镜像以 UID 10001 非 root 运行，含 CA、curl、ffmpeg 和 ffprobe；Compose 限制额外权限，使用 init 管理子进程，停机预留 30 秒，应用内部 HTTP 关闭窗口为 20 秒。
+
+媒体工具随应用镜像内置，Dockerfile 和两份 Compose 使用 `FFMPEG_PATH=/usr/bin/ffmpeg`、`FFPROBE_PATH=/usr/bin/ffprobe`，无需在宿主机安装，也不需要额外服务或端口。商品替换使用 ffmpeg 抽帧、合成原声与移除音轨。更新镜像并重建应用容器后，可在仓库根目录验证：
+
+```sh
+docker compose --env-file deploy/.env.production exec -T app /usr/bin/ffmpeg -version
+docker compose --env-file deploy/.env.production exec -T app /usr/bin/ffprobe -version
+```
+
+采用源码构建入口时，上述命令添加 `-f deploy/compose.yaml`，与启动时保持一致。
 
 应用只发布 `127.0.0.1:8090`，必须通过正确配置的 HTTPS 代理访问页面。生产 Cookie 带 Secure；直接用内部 HTTP 地址登录浏览器不能替代正式入口验证。
 

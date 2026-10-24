@@ -39,6 +39,166 @@ export function t(text: string, ...values: unknown[]): string {
 }
 
 const english: Record<string, string> = {
+  商品替换: "Product replacement",
+  返回商品替换: "Return to product replacement",
+  标注角度: "Label angle",
+  正面: "Front",
+  侧面: "Side",
+  背面: "Back",
+  细节: "Detail",
+  "工作区响应无效。": "Invalid workspace response.",
+  "好画面，换上你的商品。": "A great scene. Your product.",
+  "上传原视频和商品图，让 Seedance 参照原片段完成商品替换。":
+    "Upload a video and product images. Let Seedance create a replacement using the original as reference.",
+  电商工具: "Commerce tool",
+  "本地草稿无法读取。请检查浏览器存储；原提交恢复记录会单独保留。":
+    "Cannot read the local draft. Check browser storage; submission recovery records are kept separately.",
+  "部分草稿素材已不可读取，请重新上传或移除后继续。":
+    "Some draft assets are unavailable. Upload them again or remove them to continue.",
+  "草稿未能保存到浏览器，离开前请保留素材；生成提交仍需可靠恢复记录。":
+    "The draft could not be saved locally. Keep your source files; generation still requires reliable recovery storage.",
+  "商品图数量超过当前可用上限，请减少选择。":
+    "Too many product images. Select fewer files.",
+  "所选文件类型不正确。": "The selected file type is invalid.",
+  "素材内容与所选类型不符。":
+    "The asset content does not match the selected type.",
+  "识图服务返回的数据不完整。": "The vision service returned incomplete data.",
+  "服务端未返回有效的替换报价，请重试。":
+    "The server did not return a valid replacement quote. Try again.",
+  "原视频超过 {0} 秒，请先剪成需要替换的片段。":
+    "The source exceeds {0} seconds. Trim it to the desired segment first.",
+  "商品图数量超过当前模型上限。":
+    "The product image count exceeds this model's limit.",
+  "保留原声需要输出时长与原片段相差不超过 0.25 秒。可调整时长或选择静音。":
+    "Keeping original audio requires durations within 0.25 seconds. Adjust the duration or choose mute.",
+  "媒体处理服务未配置，暂不能保留原声或输出静音视频。":
+    "Media processing is unavailable. Keeping original audio and muting are currently disabled.",
+  确认替换: "Confirm target",
+  报价生成: "Quote & generate",
+  对比下载: "Compare & download",
+  替换记录: "Replacement history",
+  使用空白草稿: "Start with an empty draft",
+  "有一笔提交等待确认。": "A submission is awaiting confirmation.",
+  "请查询原提交结果，恢复操作使用同一提交编号。":
+    "Check the original submission. Recovery uses the same request identifier.",
+  原视频: "Original",
+  保留好画面的起点: "Start with a scene you love",
+  更换视频: "Replace video",
+  上传原视频: "Upload source video",
+  "上传已剪好的短片段，最长 {0} 秒。":
+    "Upload a trimmed clip, up to {0} seconds.",
+  "原视频不可读取，请重新上传。": "Source video unavailable. Upload it again.",
+  你的商品: "Your product",
+  "多一面参考，多一分准确": "More angles, better references",
+  素材不可用: "Asset unavailable",
+  "移除商品图 {0}": "Remove product image {0}",
+  "商品图 {0} 的角度": "Angle of product image {0}",
+  补充角度: "Add an angle",
+  上传商品图: "Upload product images",
+  "建议提供同款商品的正面、侧面和背面，包装文字保持清晰。":
+    "Add front, side and back views of the same product, with readable packaging text.",
+  "单商品、外形相近、遮挡较少的短片段，更适合开始尝试。":
+    "Start with a short clip featuring one similarly shaped product and minimal occlusion.",
+  本次替换结果: "Replacement result",
+  原片段预览: "Source preview",
+  素材与结果仅当前账号可访问:
+    "Source files and results are private to your account",
+  "视频已保存，可以对比和下载": "Video saved. Compare and download it.",
+  替换任务: "Replacement task",
+  "任务由后台持续处理，离开页面后仍可在替换记录中查看。":
+    "Processing continues in the background. Find the task in replacement history after leaving.",
+  "任务状态已更新。": "Task status updated.",
+  查看任务详情: "View task details",
+  下载视频: "Download video",
+  "模型会依据参考素材重新生成视频。人物、动作和背景可能发生变化，请通过对比确认成片。":
+    "The model generates a new video using the references. People, motion and backgrounds may change; compare the result before using it.",
+  素材分析: "Material analysis",
+  建议替换对象: "Suggested target",
+  动作与镜头: "Action & camera",
+  遮挡关系: "Occlusion",
+  新商品外观: "New product appearance",
+  "基于 {0} 张抽样帧，无法覆盖全部动作。请确认后使用。":
+    "Based on {0} sampled frames, which cannot cover every action. Review before use.",
+  移除分析结果: "Remove analysis",
+  "识别商品位置、动作与遮挡，为替换提供画面依据。":
+    "Identify the product position, movement and occlusion to guide the replacement.",
+  "识图服务尚未配置。你可以手动描述替换对象，继续生成。":
+    "Vision is not configured. Describe the target manually to continue.",
+  替换对象: "Replacement target",
+  "动作 / 遮挡": "Action / occlusion",
+  缺图建议: "Missing views",
+  "正在抽帧分析…": "Analyzing sampled frames…",
+  重新分析素材: "Analyze again",
+  分析素材: "Analyze materials",
+  "可选步骤，不收取生成积分。": "Optional. No generation credits are charged.",
+  替换设置: "Replacement settings",
+  要替换哪个商品: "Which product should be replaced?",
+  "例如：人物右手中拿着的白色瓶子":
+    "For example: the white bottle in the person's right hand",
+  补充要求: "Additional requirements",
+  "例如：保持瓶身比例，品牌文字以商品图为准":
+    "For example: keep bottle proportions and follow the reference branding",
+  "暂无启用商品替换的 Seedance 商品，请管理员完成能力验证并上架。":
+    "No Seedance product is enabled for replacement. An administrator must verify and publish one.",
+  配置模型商品: "Configure model products",
+  视频模型: "Video model",
+  "选择已验证的 Seedance 商品": "Choose a verified Seedance product",
+  输出时长: "Output duration",
+  画幅比例: "Aspect ratio",
+  音轨处理: "Audio track",
+  保留原声: "Keep original audio",
+  静音: "Mute",
+  使用模型输出音轨: "Use model output audio",
+  "保留原声会在生成后合成原片段音轨，不改变音速。":
+    "Original audio is merged after generation, without changing its speed.",
+  "尽量保留背景、光照和镜头":
+    "Preserve background, lighting and camera where possible",
+  查看生成指令: "View generation instructions",
+  "确认替换设置并获取报价后，展示服务器生成的完整指令。":
+    "Confirm the settings and get a quote to see the full server-generated instructions.",
+  "正在上传并校验素材…": "Uploading and validating materials…",
+  "正在读取画面与商品细节…": "Reading frames and product details…",
+  "把好内容，变成你的商品视频。": "Turn great content into your product video.",
+  "提交时冻结积分，视频保存完成后结算。":
+    "Credits are reserved on submission and settled after the video is saved.",
+  "报价有效至 {0}": "Quote valid until {0}",
+  "报价已过期，请重新获取": "Quote expired. Get a new quote.",
+  "{0} 积分/秒 × {1} 秒，待报价确认":
+    "{0} credits/s × {1}s, subject to a confirmed quote",
+  "按当前商品价预估，待报价确认":
+    "Estimated from the current price; confirm with a quote",
+  选择模型后显示价格: "Choose a model to see the price",
+  "正在获取报价…": "Getting quote…",
+  "正在提交…": "Submitting…",
+  "确认并生成 · {0} 积分": "Confirm & generate · {0} credits",
+  获取替换报价: "Get replacement quote",
+  "你的替换视频会保存在这里。": "Your replacement videos will appear here.",
+  "浏览器无法播放该视频，请下载查看或更换兼容编码。":
+    "The browser cannot play this video. Download it or use a compatible codec.",
+  替换对比: "Compare",
+  "原视频预览失败，请下载查看或重新上传。":
+    "Source preview failed. Download it or upload again.",
+  "结果视频预览失败，请下载查看。":
+    "Result preview failed. Download it to view.",
+  替换后: "Replacement",
+  拖动对比分割线: "Drag the comparison divider",
+  从一段好视频开始: "Start with a great video",
+  "上传原片段，在这里预览画面和替换结果。":
+    "Upload your source clip to preview it and compare the result here.",
+  暂停预览: "Pause preview",
+  播放预览: "Play preview",
+  视频预览进度: "Video preview progress",
+  "拖动分割线查看差异；两段视频同步静音预览，音轨请下载确认。":
+    "Drag the divider to compare. Both previews are synchronized and muted; download to check audio.",
+  "无法读取提交恢复记录。请启用本地存储，并使用支持 Web Locks 的浏览器通过 HTTPS 或本机地址访问。":
+    "Cannot read submission recovery records. Enable local storage and use a browser with Web Locks over HTTPS or localhost.",
+  "报价已失效，请重新获取报价。": "The quote has expired. Get a new quote.",
+  "登录状态已变化，请重新打开页面。":
+    "Your session has changed. Reopen the page.",
+  "任务回执不完整，提交结果尚未确认。":
+    "The task receipt is incomplete. Submission remains unconfirmed.",
+  "结果已确认，但恢复记录未能清理。点击重试清理，不会再次请求生成。":
+    "The result is confirmed but the recovery record could not be cleared. Retry cleanup; no new generation request will be sent.",
   调整组大小: "Resize group",
   "拖动调整大小，或使用方向键": "Drag to resize, or use the arrow keys",
   "双击空白添加节点 · 拖动空白移动 · 滚轮缩放":

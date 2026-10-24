@@ -28,6 +28,7 @@ import {
   useResource,
 } from "./ui";
 import { Projects } from "./Projects";
+import { ProductSwap } from "./ProductSwap";
 import { Workspace } from "./Workspace";
 import { routeFromLocation, type Route } from "./routing";
 import {
@@ -246,6 +247,12 @@ export function App() {
       en: "PROJECTS",
     },
     {
+      page: "product-swap",
+      icon: "refresh",
+      label: t("商品替换"),
+      en: "PRODUCT SWAP",
+    },
+    {
       page: "assets",
       icon: "image",
       label: t("素材库"),
@@ -272,6 +279,7 @@ export function App() {
     projects: t("项目空间"),
     project: t("创作工作台"),
     assets: t("素材库"),
+    "product-swap": t("商品替换"),
     tasks: t("任务中心"),
     wallet: t("积分钱包"),
     account: t("账户设置"),
@@ -449,6 +457,8 @@ export function App() {
                 projectId={route.id}
                 query={route.query}
               />
+            ) : route.page === "product-swap" ? (
+              <ProductSwap />
             ) : route.page === "assets" ? (
               <AssetsPage />
             ) : route.page === "tasks" ? (

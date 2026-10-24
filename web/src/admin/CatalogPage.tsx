@@ -1049,6 +1049,14 @@ function ProductForm({
               checked={draft.capabilities.supports_cancel}
               onChange={(v) => cap("supports_cancel", v)}
             />
+            <Check
+              label={a(
+                "启用商品替换工具（已验证的 Seedance 视频与图片参考）",
+                "Enable product replacement (verified Seedance video and image references)",
+              )}
+              checked={!!draft.capabilities.supports_product_swap}
+              onChange={(v) => cap("supports_product_swap", v)}
+            />
           </div>
         )}
         <h3 className="admin-form-section">

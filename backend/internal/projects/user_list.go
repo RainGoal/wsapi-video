@@ -23,7 +23,7 @@ func (s *Service) pagedUserProjects(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, 422, "invalid_status", "无效项目状态")
 		return
 	}
-	const where = ` WHERE user_id=$1 AND deleted_at IS NULL AND ($2='all' OR status=$2) AND ($3='' OR position(lower($3) IN lower(name||' '||description))>0)`
+	const where = ` WHERE user_id=$1 AND workspace_kind='' AND deleted_at IS NULL AND ($2='all' OR status=$2) AND ($3='' OR position(lower($3) IN lower(name||' '||description))>0)`
 	args := []any{core.UserFrom(r.Context()).ID, status, f["q"]}
 	var total int64
 	if err := s.db.QueryRow(r.Context(), "SELECT count(*) FROM projects"+where, args...).Scan(&total); err != nil {

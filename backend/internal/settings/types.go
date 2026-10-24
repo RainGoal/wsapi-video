@@ -15,12 +15,15 @@ type Site struct {
 	RefundPolicy             string `json:"refund_policy"`
 }
 type Media struct {
-	Origin             string   `json:"origin"`
-	OutputOrigins      []string `json:"output_origins"`
-	ImageKey           string   `json:"image_key,omitempty"`
-	VideoKey           string   `json:"video_key,omitempty"`
-	ImageKeyConfigured bool     `json:"image_key_configured"`
-	VideoKeyConfigured bool     `json:"video_key_configured"`
+	Origin                string   `json:"origin"`
+	OutputOrigins         []string `json:"output_origins"`
+	ImageKey              string   `json:"image_key,omitempty"`
+	VideoKey              string   `json:"video_key,omitempty"`
+	ImageKeyConfigured    bool     `json:"image_key_configured"`
+	VideoKeyConfigured    bool     `json:"video_key_configured"`
+	AnalysisModel         string   `json:"analysis_model"`
+	AnalysisKey           string   `json:"analysis_key,omitempty"`
+	AnalysisKeyConfigured bool     `json:"analysis_key_configured"`
 }
 type Payment struct {
 	Enabled       bool   `json:"enabled"`

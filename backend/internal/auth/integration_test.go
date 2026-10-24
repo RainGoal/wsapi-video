@@ -85,12 +85,14 @@ func setup(t *testing.T) *fixture {
 		admin.Close()
 	})
 	_, currentFile, _, _ := runtime.Caller(0)
-	migration, err := os.ReadFile(filepath.Join(filepath.Dir(currentFile), "..", "..", "migrations", "001_identity_projects_assets.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.Exec(ctx, string(migration)); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"001_identity_projects_assets.sql", "008_product_swap.sql"} {
+		migration, err := os.ReadFile(filepath.Join(filepath.Dir(currentFile), "..", "..", "migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(ctx, string(migration)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err = db.Exec(ctx, `CREATE TABLE wallet_accounts(user_id text PRIMARY KEY REFERENCES users(id),available bigint NOT NULL DEFAULT 0,frozen bigint NOT NULL DEFAULT 0)`); err != nil {
 		t.Fatal(err)

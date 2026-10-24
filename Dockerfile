@@ -21,7 +21,7 @@ COPY --from=backend /studio /app/studio
 COPY --from=backend /monitor /app/monitor
 COPY --from=backend /licenses /app/licenses
 COPY --from=web /src/web/dist /app/web
-ENV WEB_DIR=/app/web LISTEN_ADDR=0.0.0.0:8090 FFPROBE_PATH=/usr/bin/ffprobe
+ENV WEB_DIR=/app/web LISTEN_ADDR=0.0.0.0:8090 FFPROBE_PATH=/usr/bin/ffprobe FFMPEG_PATH=/usr/bin/ffmpeg
 USER studio
 EXPOSE 8090
 HEALTHCHECK --interval=15s --timeout=5s --start-period=75s --retries=3 \

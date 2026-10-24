@@ -642,11 +642,23 @@ export function TasksPage({ initialTaskId }: { initialTaskId?: string }) {
                 <button
                   className="button secondary"
                   onClick={() => {
-                    navigate("project", selected.project_id);
+                    if (
+                      selected.input &&
+                      typeof selected.input === "object" &&
+                      "product_swap" in selected.input
+                    )
+                      navigate("product-swap");
+                    else navigate("project", selected.project_id);
                     setSelected(null);
                   }}
                 >
-                  {translate("打开所属项目")}
+                  {translate(
+                    selected.input &&
+                      typeof selected.input === "object" &&
+                      "product_swap" in selected.input
+                      ? "返回商品替换"
+                      : "打开所属项目",
+                  )}
                   <Icon name="arrow" size={16} />
                 </button>
                 {(selected.execution_status === "queued" ||
