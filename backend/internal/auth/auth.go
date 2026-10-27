@@ -71,10 +71,10 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		}
 		var u core.User
 		var identity sessionIdentity
-		err = s.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.display_name,u.role,u.status,u.email_verified,u.created_at,s.id,s.csrf_token
+		err = s.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.display_name,u.role,u.status,u.email_verified,u.created_at,u.must_change_password,s.id,s.csrf_token
 			FROM sessions s JOIN users u ON u.id=s.user_id
 			WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND u.status='active' AND u.email_verified`, digest(cookie.Value)).Scan(
-			&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &identity.ID, &identity.CSRF)
+			&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &u.MustChangePassword, &identity.ID, &identity.CSRF)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				httpx.Fail(w, 401, "unauthorized", "会话已失效，请重新登录")
@@ -88,6 +88,10 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 				httpx.Fail(w, 403, "csrf_invalid", "会话安全令牌已失效，请刷新页面")
 				return
 			}
+		}
+		if u.MustChangePassword && !((r.Method == http.MethodGet && r.URL.Path == "/api/v1/me") || (r.Method == http.MethodPost && (r.URL.Path == "/api/v1/auth/change-password" || r.URL.Path == "/api/v1/auth/logout"))) {
+			httpx.Fail(w, 403, "password_change_required", "请先修改初始密码后再继续使用")
+			return
 		}
 		ctx := context.WithValue(core.WithUser(r.Context(), u), sessionKey{}, identity)
 		_, _ = s.db.Exec(ctx, `UPDATE sessions SET last_seen_at=now() WHERE id=$1 AND last_seen_at<now()-interval '5 minutes'`, identity.ID)
@@ -273,6 +277,9 @@ func (s *Service) queueToken(ctx context.Context, tx pgx.Tx, userID, email, purp
 		path = "/reset-password"
 	}
 	// Superseding a request invalidates older unused tickets in the same transaction.
+	if _, err := tx.Exec(ctx, `UPDATE auth_mail_outbox SET cancelled_at=now(),body='' WHERE user_id=$1 AND purpose=$2 AND sent_at IS NULL AND cancelled_at IS NULL`, userID, purpose); err != nil {
+		return "", err
+	}
 	if _, err := tx.Exec(ctx, `UPDATE auth_tokens SET used_at=now() WHERE user_id=$1 AND purpose=$2 AND used_at IS NULL`, userID, purpose); err != nil {
 		return "", err
 	}
@@ -281,7 +288,7 @@ func (s *Service) queueToken(ctx context.Context, tx pgx.Tx, userID, email, purp
 	}
 	link := strings.TrimRight(s.cfg.PublicURL, "/") + path + "?token=" + url.QueryEscape(token)
 	body := "请打开以下链接完成操作：\r\n\r\n" + link + "\r\n\r\n如非本人操作，请忽略此邮件。"
-	_, err := tx.Exec(ctx, `INSERT INTO auth_mail_outbox(id,user_id,to_email,subject,body) VALUES($1,$2,$3,$4,$5)`, core.ID("mail"), userID, email, subject, body)
+	_, err := tx.Exec(ctx, `INSERT INTO auth_mail_outbox(id,user_id,to_email,subject,body,purpose) VALUES($1,$2,$3,$4,$5,$6)`, core.ID("mail"), userID, email, subject, body, purpose)
 	return token, err
 }
 
@@ -311,7 +318,7 @@ func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	// Password changes take an exclusive user lock. Holding a share lock until
 	// session creation prevents an old-password login from escaping revocation.
-	err = tx.QueryRow(r.Context(), `SELECT id,email,display_name,role,status,email_verified,created_at,password_hash FROM users WHERE email=$1 FOR SHARE`, email).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &hash)
+	err = tx.QueryRow(r.Context(), `SELECT id,email,display_name,role,status,email_verified,created_at,must_change_password,password_hash FROM users WHERE email=$1 FOR SHARE`, email).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &u.MustChangePassword, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		hash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 	} else if err != nil {
@@ -364,13 +371,15 @@ func (s *Service) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var userID string
-	err = tx.QueryRow(r.Context(), `UPDATE auth_tokens SET used_at=now() WHERE token_hash=$1 AND purpose='verify' AND used_at IS NULL AND expires_at>now() RETURNING user_id`, digest(in.Token)).Scan(&userID)
+	userID, err := consumeToken(r.Context(), tx, in.Token, "verify")
 	if err != nil {
 		httpx.Fail(w, 422, "invalid_token", "验证链接无效或已过期")
 		return
 	}
 	_, err = tx.Exec(r.Context(), `UPDATE users SET email_verified=true,updated_at=now() WHERE id=$1`, userID)
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE auth_mail_outbox SET cancelled_at=now(),body='' WHERE user_id=$1 AND purpose='verify' AND sent_at IS NULL AND cancelled_at IS NULL`, userID)
+	}
 	if err == nil {
 		err = tx.Commit(r.Context())
 	}
@@ -464,15 +473,29 @@ func (s *Service) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var id string
-	err = tx.QueryRow(r.Context(), `UPDATE auth_tokens SET used_at=now() WHERE token_hash=$1 AND purpose='reset' AND used_at IS NULL AND expires_at>now() RETURNING user_id`, digest(in.Token)).Scan(&id)
+	id, err := consumeToken(r.Context(), tx, in.Token, "reset")
 	if err != nil {
 		httpx.Fail(w, 422, "invalid_token", "重置链接无效或已过期")
 		return
 	}
-	_, err = tx.Exec(r.Context(), `UPDATE users SET password_hash=$2,updated_at=now() WHERE id=$1`, id, string(hash))
+	var current string
+	var forced bool
+	err = tx.QueryRow(r.Context(), `SELECT password_hash,must_change_password FROM users WHERE id=$1`, id).Scan(&current, &forced)
+	if err == nil && forced && bcrypt.CompareHashAndPassword([]byte(current), []byte(in.Password)) == nil {
+		httpx.Fail(w, 422, "password_unchanged", "新密码不能与初始密码相同")
+		return
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE users SET password_hash=$2,must_change_password=false,updated_at=now() WHERE id=$1`, id, string(hash))
+	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE auth_tokens SET used_at=now() WHERE user_id=$1 AND used_at IS NULL`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE auth_mail_outbox SET cancelled_at=now(),body='' WHERE user_id=$1 AND sent_at IS NULL AND cancelled_at IS NULL`, id)
 	}
 	if err == nil {
 		err = tx.Commit(r.Context())
@@ -520,20 +543,28 @@ func (s *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	var current string
-	err = tx.QueryRow(r.Context(), `SELECT password_hash FROM users WHERE id=$1 FOR UPDATE`, u.ID).Scan(&current)
+	var forced bool
+	err = tx.QueryRow(r.Context(), `SELECT password_hash,must_change_password FROM users WHERE id=$1 FOR UPDATE`, u.ID).Scan(&current, &forced)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(current), []byte(in.CurrentPassword)) != nil {
 		httpx.Fail(w, 422, "invalid_password", "当前密码错误")
 		return
 	}
+	if forced && bcrypt.CompareHashAndPassword([]byte(current), []byte(in.Password)) == nil {
+		httpx.Fail(w, 422, "password_unchanged", "新密码不能与初始密码相同")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err == nil {
-		_, err = tx.Exec(r.Context(), `UPDATE users SET password_hash=$2,updated_at=now() WHERE id=$1`, u.ID, string(hash))
+		_, err = tx.Exec(r.Context(), `UPDATE users SET password_hash=$2,must_change_password=false,updated_at=now() WHERE id=$1`, u.ID, string(hash))
 	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, u.ID)
 	}
 	if err == nil {
 		_, err = tx.Exec(r.Context(), `UPDATE auth_tokens SET used_at=now() WHERE user_id=$1 AND used_at IS NULL`, u.ID)
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE auth_mail_outbox SET cancelled_at=now(),body='' WHERE user_id=$1 AND sent_at IS NULL AND cancelled_at IS NULL`, u.ID)
 	}
 	if err == nil {
 		err = tx.Commit(r.Context())
@@ -637,7 +668,7 @@ func (s *Service) deliverMail(ctx context.Context) {
 		}
 		var id, to, subject, body string
 		var attempts int
-		err = tx.QueryRow(ctx, `SELECT id,to_email,subject,body,attempts FROM auth_mail_outbox WHERE sent_at IS NULL AND next_attempt_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id, &to, &subject, &body, &attempts)
+		err = tx.QueryRow(ctx, `SELECT id,to_email,subject,body,attempts FROM auth_mail_outbox WHERE sent_at IS NULL AND cancelled_at IS NULL AND next_attempt_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id, &to, &subject, &body, &attempts)
 		if err != nil {
 			_ = tx.Rollback(ctx)
 			return
@@ -650,10 +681,10 @@ func (s *Service) deliverMail(ctx context.Context) {
 		message := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s", cfg.SMTPFrom, to, encodeSubject(subject), body))
 		err = sendMailContext(ctx, addr, authentication, cfg.SMTPFrom, to, message)
 		if err == nil {
-			_, err = tx.Exec(ctx, `UPDATE auth_mail_outbox SET sent_at=now(),body='' WHERE id=$1`, id)
+			_, err = tx.Exec(ctx, `UPDATE auth_mail_outbox SET sent_at=now(),body='',last_error_code='' WHERE id=$1`, id)
 		} else {
 			delay := time.Duration(1<<min(attempts, 10)) * time.Minute
-			_, err = tx.Exec(ctx, `UPDATE auth_mail_outbox SET attempts=attempts+1,next_attempt_at=$2 WHERE id=$1`, id, time.Now().Add(delay))
+			_, err = tx.Exec(ctx, `UPDATE auth_mail_outbox SET attempts=attempts+1,next_attempt_at=$2,last_error_code='smtp_delivery_failed' WHERE id=$1`, id, time.Now().Add(delay))
 		}
 		if err == nil {
 			err = tx.Commit(ctx)

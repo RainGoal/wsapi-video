@@ -131,3 +131,14 @@ export function recordsSignalTarget(kind: string, query = "") {
       statuses.length === 1 && allowed.includes(statuses[0]) ? statuses[0] : "",
   };
 }
+
+export function recordsUserTarget(kind: string, query = ""): string {
+  const params = new URLSearchParams(query);
+  const users = params.getAll(kind === "audit" ? "target_user_id" : "user_id");
+  return ["tasks", "orders", "adjust", "audit"].includes(kind) &&
+    users.length === 1 &&
+    users[0].length > 0 &&
+    users[0].length <= 100
+    ? users[0]
+    : "";
+}

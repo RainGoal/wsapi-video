@@ -7,6 +7,7 @@ export type User = {
   role: "admin" | "user";
   status: string;
   email_verified: boolean;
+  must_change_password?: boolean;
   created_at: string;
 };
 export type Identity = { user: User; csrf_token: string };

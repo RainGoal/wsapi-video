@@ -54,42 +54,7 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email, password string) er
 }
 
 func (s *Service) adminUsers(w http.ResponseWriter, r *http.Request) {
-	page, ok := httpx.Pagination(w, r)
-	if !ok {
-		return
-	}
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	status := r.URL.Query().Get("status")
-	if len(query) > 200 || (status != "" && status != "active" && status != "disabled" && status != "unverified") {
-		httpx.Fail(w, 422, "invalid_query", "搜索或筛选参数无效")
-		return
-	}
-	const where = ` WHERE ($1='' OR position(lower($1) IN lower(id||' '||email||' '||display_name))>0) AND ($2='' OR status=$2 OR ($2='unverified' AND NOT email_verified))`
-	var total int64
-	if err := s.db.QueryRow(r.Context(), "SELECT count(*) FROM users"+where, query, status).Scan(&total); err != nil {
-		httpx.Fail(w, 500, "users_failed", "无法读取用户")
-		return
-	}
-	rows, err := s.db.Query(r.Context(), `SELECT id,email,display_name,role,status,email_verified,created_at FROM users`+where+` ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4`, query, status, page.Limit, page.Offset)
-	if err != nil {
-		httpx.Fail(w, 500, "users_failed", "无法读取用户")
-		return
-	}
-	defer rows.Close()
-	items := []core.User{}
-	for rows.Next() {
-		var u core.User
-		if err = rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt); err != nil {
-			httpx.Fail(w, 500, "users_failed", "无法读取用户")
-			return
-		}
-		items = append(items, u)
-	}
-	if rows.Err() != nil {
-		httpx.Fail(w, 500, "users_failed", "无法读取用户")
-		return
-	}
-	httpx.JSON(w, 200, page.Result(items, total))
+	s.pagedAdminUsers(w, r)
 }
 
 func (s *Service) adminUpdateUser(w http.ResponseWriter, r *http.Request) {

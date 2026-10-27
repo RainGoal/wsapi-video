@@ -91,11 +91,14 @@ export function RecordsPage({
   kind,
   initialRecordId = "",
   initialStatus = "",
+  initialUserId = "",
 }: {
   kind: Kind;
   initialRecordId?: string;
   initialStatus?: string;
+  initialUserId?: string;
 }) {
+  const { navigate } = useStudio();
   const [search, setSearch] = useState(initialRecordId),
     [q, setQ] = useState(initialRecordId),
     [status, setStatus] = useState(initialStatus),
@@ -120,6 +123,8 @@ export function RecordsPage({
   if (q) params.set("q", q);
   if (status) params.set(kind === "audit" ? "action" : "status", status);
   if (mediaKind) params.set("kind", mediaKind);
+  if (initialUserId && ["tasks", "orders", "audit"].includes(kind))
+    params.set(kind === "audit" ? "target_user_id" : "user_id", initialUserId);
   const resource = useResource<PageResult<Row>>(
     `${endpoints[kind]}?${params}`,
     { items: [] },
@@ -160,6 +165,10 @@ export function RecordsPage({
       ["settings.update", "系统配置", "System settings"],
       ["wallet.adjust", "积分调整", "Credit adjustments"],
       ["task.refund", "任务退款", "Task refunds"],
+      ["user.create", "新增用户", "User creation"],
+      ["user.update_profile", "用户资料", "User profiles"],
+      ["user.send_verification", "验证邮件", "Verification emails"],
+      ["user.send_password_reset", "密码重置邮件", "Password reset emails"],
       ["user.set_status", "用户状态", "User status"],
       ["user.revoke_sessions", "撤销会话", "Session revocation"],
     ],
@@ -200,6 +209,18 @@ export function RecordsPage({
           {a("刷新列表", "Refresh")}
         </button>
       </div>
+      {initialUserId && (
+        <Notice>
+          {a("当前仅查看该用户的记录：", "Showing records for user: ")}
+          <CopyID value={initialUserId} />{" "}
+          <button
+            className="text-button"
+            onClick={() => navigate("admin", kind)}
+          >
+            {a("清除用户筛选", "Clear user filter")}
+          </button>
+        </Notice>
+      )}
       <div className="admin-filter-bar">
         <div className="search-box">
           <Icon name="search" />
@@ -988,11 +1009,27 @@ function UserLedger({ userID }: { userID: string }) {
     </>
   );
 }
-export function AdjustmentPage() {
+export function AdjustmentPage({
+  initialUserId = "",
+}: {
+  initialUserId?: string;
+}) {
   const { user } = useStudio();
-  return <AdjustmentForm key={user.id} adminID={user.id} />;
+  return (
+    <AdjustmentForm
+      key={`${user.id}:${initialUserId}`}
+      adminID={user.id}
+      initialUserId={initialUserId}
+    />
+  );
 }
-function AdjustmentForm({ adminID }: { adminID: string }) {
+function AdjustmentForm({
+  adminID,
+  initialUserId,
+}: {
+  adminID: string;
+  initialUserId: string;
+}) {
   const { notify, refreshWallet } = useStudio();
   const storageFailure = () =>
     a(
@@ -1042,6 +1079,41 @@ function AdjustmentForm({ adminID }: { adminID: string }) {
     };
   }, []);
   const locked = busy || Boolean(pending) || Boolean(storageError);
+  const initialUser = useResource<UserDetail | null>(
+    initialUserId && !initialRecovery.pending
+      ? `/admin/users/${encodeURIComponent(initialUserId)}`
+      : null,
+    null,
+  );
+  const initialSelected = useRef(false);
+  useEffect(() => {
+    if (
+      initialSelected.current ||
+      !initialUserId ||
+      pending ||
+      storageError ||
+      search ||
+      selected
+    )
+      return;
+    if (
+      !initialUser.loading &&
+      !initialUser.error &&
+      initialUser.data?.user.id === initialUserId
+    ) {
+      initialSelected.current = true;
+      setSelected(initialUser.data.user);
+    }
+  }, [
+    initialUserId,
+    initialUser.loading,
+    initialUser.error,
+    initialUser.data,
+    pending,
+    storageError,
+    search,
+    selected,
+  ]);
   useEffect(() => {
     const timer = setTimeout(() => setQ(search), 300);
     return () => clearTimeout(timer);
@@ -1211,6 +1283,23 @@ function AdjustmentForm({ adminID }: { adminID: string }) {
           )}
         </p>
         <form onSubmit={submit}>
+          {initialUserId &&
+            !initialSelected.current &&
+            !initialRecovery.pending && (
+              <LoadingError
+                loading={initialUser.loading}
+                error={initialUser.error}
+                retry={initialUser.refresh}
+              />
+            )}
+          {initialUserId && pending && pending.target.id !== initialUserId && (
+            <Notice>
+              {a(
+                "已优先恢复尚未确认的原调账，请先核对该请求后再切换用户。",
+                "The unconfirmed adjustment was restored first. Resolve it before switching users.",
+              )}
+            </Notice>
+          )}
           <Field
             label={a("查找用户", "Find a user")}
             hint={a(

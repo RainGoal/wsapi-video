@@ -176,18 +176,19 @@ func (s *Service) pagedAuditList(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("q"))
-	if len(search) > 200 || len(q.Get("action")) > 100 {
+	targetUserID := q.Get("target_user_id")
+	if len(search) > 200 || len(q.Get("action")) > 100 || len(targetUserID) > 100 || len(q["target_user_id"]) > 1 {
 		invalid(w, "搜索或筛选参数无效")
 		return
 	}
-	const source = `(SELECT id,admin_id,action,target_id,reason,details,created_at FROM admin_audit UNION ALL SELECT id,actor_id,'user.'||action,target_user_id,reason,jsonb_build_object('previous_status',previous_status,'next_status',next_status),created_at FROM identity_admin_audit) a`
-	const where = ` WHERE ($1='' OR position(lower($1) IN lower(a.id||' '||a.admin_id||' '||a.action||' '||a.target_id||' '||a.reason))>0) AND ($2='' OR a.action=$2)`
+	const source = `(SELECT id,admin_id,action,target_id,reason,details,created_at FROM admin_audit UNION ALL SELECT id,actor_id,'user.'||action,target_user_id,reason,jsonb_build_object('previous_status',previous_status,'next_status',next_status,'previous_values',previous_values,'next_values',next_values),created_at FROM identity_admin_audit) a`
+	const where = ` WHERE ($1='' OR position(lower($1) IN lower(a.id||' '||a.admin_id||' '||a.action||' '||a.target_id||' '||a.reason))>0) AND ($2='' OR a.action=$2) AND ($3='' OR a.target_id=$3 OR EXISTS(SELECT 1 FROM generation_tasks t WHERE t.id=a.target_id AND t.user_id=$3) OR EXISTS(SELECT 1 FROM payment_orders o WHERE o.id=a.target_id AND o.user_id=$3))`
 	var total int64
-	if err := s.db.QueryRow(r.Context(), "SELECT count(*) FROM "+source+where, search, q.Get("action")).Scan(&total); err != nil {
+	if err := s.db.QueryRow(r.Context(), "SELECT count(*) FROM "+source+where, search, q.Get("action"), targetUserID).Scan(&total); err != nil {
 		dbError(w, err)
 		return
 	}
-	rows, err := s.db.Query(r.Context(), "SELECT a.id,a.admin_id,a.action,a.target_id,a.reason,a.details,a.created_at FROM "+source+where+" ORDER BY a.created_at DESC,a.id DESC LIMIT $3 OFFSET $4", search, q.Get("action"), page.Limit, page.Offset)
+	rows, err := s.db.Query(r.Context(), "SELECT a.id,a.admin_id,a.action,a.target_id,a.reason,a.details,a.created_at FROM "+source+where+" ORDER BY a.created_at DESC,a.id DESC LIMIT $4 OFFSET $5", search, q.Get("action"), targetUserID, page.Limit, page.Offset)
 	if err != nil {
 		dbError(w, err)
 		return

@@ -77,7 +77,7 @@ codes(code, ordinal) AS (VALUES
  UNION ALL
  SELECT flags.code,m.id,m.created_at,m.attempts FROM auth_mail_outbox m
  CROSS JOIN LATERAL (VALUES ('mail_pending',true),('mail_retry',m.attempts>0)) AS flags(code,included)
- WHERE m.sent_at IS NULL AND flags.included
+ WHERE m.sent_at IS NULL AND m.cancelled_at IS NULL AND flags.included
  UNION ALL
  SELECT 'procurement_review_disputed',p.task_id,p.created_at,0 FROM task_procurement_reviews p
  WHERE p.status='disputed' AND NOT EXISTS (

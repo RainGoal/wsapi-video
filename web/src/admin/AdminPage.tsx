@@ -5,8 +5,9 @@ import { a } from "./common";
 import { SettingsPage } from "./SettingsPage";
 import { CatalogPage } from "./CatalogPage";
 import { RecordsPage, AdjustmentPage } from "./RecordsPage";
+import { UsersPage } from "./UsersPage";
 import { OperationsSignals } from "./OperationsSignals";
-import { recordsSignalTarget } from "./operation-signals";
+import { recordsSignalTarget, recordsUserTarget } from "./operation-signals";
 import "./admin.css";
 
 export const adminSections = [
@@ -85,6 +86,7 @@ export function AdminPage({
   const active =
     adminSections.find((item) => item.id === section) || adminSections[0];
   const target = recordsSignalTarget(active.id, query);
+  const userId = recordsUserTarget(active.id, query);
   return (
     <div className="admin-console">
       <header className="admin-heading">
@@ -138,14 +140,17 @@ export function AdminPage({
           <SettingsPage />
         ) : active.id === "products" || active.id === "tiers" ? (
           <CatalogPage kind={active.id} />
+        ) : active.id === "users" ? (
+          <UsersPage query={query} />
         ) : active.id === "adjust" ? (
-          <AdjustmentPage />
+          <AdjustmentPage initialUserId={userId} />
         ) : (
           <RecordsPage
-            key={`${active.id}:${target.recordId}:${target.initialStatus}`}
+            key={`${active.id}:${target.recordId}:${target.initialStatus}:${userId}`}
             kind={active.id as "users" | "tasks" | "orders" | "audit"}
             initialRecordId={target.recordId}
             initialStatus={target.initialStatus}
+            initialUserId={userId}
           />
         )}
       </div>

@@ -85,7 +85,7 @@ func setup(t *testing.T) *fixture {
 		admin.Close()
 	})
 	_, currentFile, _, _ := runtime.Caller(0)
-	for _, name := range []string{"001_identity_projects_assets.sql", "008_product_swap.sql"} {
+	for _, name := range []string{"001_identity_projects_assets.sql", "008_product_swap.sql", "009_user_management.sql"} {
 		migration, err := os.ReadFile(filepath.Join(filepath.Dir(currentFile), "..", "..", "migrations", name))
 		if err != nil {
 			t.Fatal(err)

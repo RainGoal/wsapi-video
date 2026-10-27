@@ -17,6 +17,7 @@ import {
   waitForSessionChanges,
 } from "./api";
 import { Auth } from "./Auth";
+import { ForcePasswordChange } from "./ForcePasswordChange";
 import { PoliciesModal } from "./PoliciesModal";
 import type { Identity, System, User, Wallet } from "./types";
 import {
@@ -238,6 +239,15 @@ export function App() {
         />
         {policies}
       </>
+    );
+  if (identity.user.must_change_password)
+    return (
+      <ForcePasswordChange
+        key={identityVersion}
+        email={identity.user.email}
+        endSession={endSession}
+        logout={logout}
+      />
     );
   const creatorNav = [
     {

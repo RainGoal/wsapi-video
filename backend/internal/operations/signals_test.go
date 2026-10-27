@@ -115,6 +115,11 @@ func seedSignalRows(t *testing.T, db *pgxpool.Pool) time.Time {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = db.Exec(ctx, `INSERT INTO auth_mail_outbox(id,user_id,to_email,subject,body,attempts,cancelled_at,created_at)
+ VALUES('mail-cancelled','creator','private-recipient@example.test','private-subject','',9,now(),$1)`, base.Add(-96*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
 	return base
 }
 

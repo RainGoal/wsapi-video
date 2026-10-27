@@ -12,6 +12,7 @@ import (
 )
 
 func (s *Service) registerAdminDetails(mux *http.ServeMux, admin func(http.Handler) http.Handler) {
+	s.registerAdminUsers(mux, admin)
 	mux.Handle("GET /api/v1/admin/users/{id}", admin(http.HandlerFunc(s.adminUser)))
 	mux.Handle("GET /api/v1/admin/users/{id}/ledger", admin(http.HandlerFunc(s.adminUserLedger)))
 	mux.Handle("POST /api/v1/admin/users/{id}/revoke-sessions", admin(http.HandlerFunc(s.adminRevokeSessions)))
@@ -20,7 +21,8 @@ func (s *Service) registerAdminDetails(mux *http.ServeMux, admin func(http.Handl
 func (s *Service) adminUser(w http.ResponseWriter, r *http.Request) {
 	var u core.User
 	var available, frozen int64
-	err := s.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.display_name,u.role,u.status,u.email_verified,u.created_at,COALESCE(w.available,0),COALESCE(w.frozen,0) FROM users u LEFT JOIN wallet_accounts w ON w.user_id=u.id WHERE u.id=$1`, r.PathValue("id")).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &available, &frozen)
+	var note string
+	err := s.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.display_name,u.role,u.status,u.email_verified,u.created_at,u.must_change_password,u.admin_note,COALESCE(w.available,0),COALESCE(w.frozen,0) FROM users u LEFT JOIN wallet_accounts w ON w.user_id=u.id WHERE u.id=$1`, r.PathValue("id")).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &u.Status, &u.EmailVerified, &u.CreatedAt, &u.MustChangePassword, &note, &available, &frozen)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httpx.Fail(w, 404, "not_found", "用户不存在")
 		return
@@ -34,7 +36,12 @@ func (s *Service) adminUser(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, 500, "user_failed", "无法读取用户会话")
 		return
 	}
-	httpx.JSON(w, 200, map[string]any{"user": u, "wallet": map[string]int64{"available": available, "frozen": frozen}, "active_sessions": sessions})
+	mail, err := s.adminMailStatus(r.Context(), u.ID)
+	if err != nil {
+		httpx.Fail(w, 503, "mail_status_failed", "暂时无法读取邮件状态")
+		return
+	}
+	httpx.JSON(w, 200, map[string]any{"user": u, "wallet": map[string]int64{"available": available, "frozen": frozen}, "active_sessions": sessions, "admin_note": note, "mail_delivery": mail})
 }
 
 func (s *Service) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {

@@ -8,13 +8,14 @@ import (
 )
 
 type User struct {
-	ID            string    `json:"id"`
-	Email         string    `json:"email"`
-	DisplayName   string    `json:"display_name"`
-	Role          string    `json:"role"`
-	Status        string    `json:"status"`
-	EmailVerified bool      `json:"email_verified"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	Email              string    `json:"email"`
+	DisplayName        string    `json:"display_name"`
+	Role               string    `json:"role"`
+	Status             string    `json:"status"`
+	EmailVerified      bool      `json:"email_verified"`
+	MustChangePassword bool      `json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type userKey struct{}
