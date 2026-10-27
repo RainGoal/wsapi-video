@@ -80,7 +80,7 @@ func monitorPostgresFixture(t *testing.T) (*pgxpool.Pool, string) {
 	_, err = db.Exec(ctx, `
 CREATE TABLE generation_tasks(id text,created_at timestamptz,attempts integer,lease_until timestamptz,execution_status text,settlement_status text,delivery_status text,error_code text,prompt text,credential_ref text);
 CREATE TABLE payment_orders(id text,created_at timestamptz,check_attempts integer,credit_status text,payment_status text,expires_at timestamptz,checkout_url text,provider_payload text);
-CREATE TABLE auth_mail_outbox(id text,created_at timestamptz,attempts integer,sent_at timestamptz,recipient text,body text);
+CREATE TABLE auth_mail_outbox(id text,created_at timestamptz,attempts integer,sent_at timestamptz,cancelled_at timestamptz,recipient text,body text);
 CREATE TABLE task_procurement_reviews(task_id text,revision bigint,status text,created_at timestamptz,reason text,evidence text,admin_id text);
 INSERT INTO generation_tasks VALUES('task-local-1',now()-interval '2 days',3,now()-interval '1 minute','submission_unknown','frozen','pending','','private-prompt-sentinel','private-credential-sentinel');
 INSERT INTO generation_tasks VALUES('task-local-2',now(),0,NULL,'completed','consumed','ready','','private-prompt-sentinel','private-credential-sentinel');
@@ -91,7 +91,9 @@ INSERT INTO task_procurement_reviews VALUES
  ('task-local-3',1,'disputed',now(),'private-reason-sentinel','private-evidence-sentinel','private-admin-sentinel'),
  ('task-local-3',2,'resolved',now()-interval '1 day','private-reason-sentinel','private-evidence-sentinel','private-admin-sentinel');
 INSERT INTO payment_orders VALUES('payment-local-1',now(),4,'pending','paid',now()+interval '1 hour','private-checkout-sentinel','private-payment-sentinel');
-INSERT INTO auth_mail_outbox VALUES('mail-local-1',now(),2,NULL,'private-recipient-sentinel','private-mail-sentinel');
+INSERT INTO auth_mail_outbox VALUES
+ ('mail-local-1',now(),2,NULL,NULL,'private-recipient-sentinel','private-mail-sentinel'),
+ ('mail-local-cancelled',now()-interval '1 day',4,NULL,now(),'private-recipient-sentinel','private-mail-sentinel');
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +101,7 @@ INSERT INTO auth_mail_outbox VALUES('mail-local-1',now(),2,NULL,'private-recipie
 	_, err = db.Exec(ctx, "GRANT USAGE ON SCHEMA "+schemaIdent+" TO "+roleIdent+";"+
 		"GRANT SELECT (id,created_at,attempts,lease_until,execution_status,settlement_status,delivery_status,error_code) ON generation_tasks TO "+roleIdent+";"+
 		"GRANT SELECT (id,created_at,check_attempts,credit_status,payment_status,expires_at) ON payment_orders TO "+roleIdent+";"+
-		"GRANT SELECT (id,created_at,attempts,sent_at) ON auth_mail_outbox TO "+roleIdent+";"+
+		"GRANT SELECT (id,created_at,attempts,sent_at,cancelled_at) ON auth_mail_outbox TO "+roleIdent+";"+
 		"GRANT SELECT (task_id,revision,status,created_at) ON task_procurement_reviews TO "+roleIdent)
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +157,11 @@ func TestMonitorPostgresUsesLimitedColumnsAndPureJSON(t *testing.T) {
 	}
 	if got := snapshot.Signals[7]; got.Code != "procurement_review_disputed" || got.Count != 1 || len(got.Samples) != 1 || got.Samples[0].ID != "task-local-2" || got.Samples[0].Attempts != 0 {
 		t.Fatalf("latest consumed procurement dispute was not readable with limited columns: %#v", got)
+	}
+	for _, signal := range snapshot.Signals[5:7] {
+		if signal.Count != 1 || len(signal.Samples) != 1 || signal.Samples[0].ID != "mail-local-1" || signal.Samples[0].Attempts != 2 {
+			t.Fatalf("cancelled mail must be excluded with limited columns: %#v", signal)
+		}
 	}
 	cfg, err := monitorPoolConfig(ctx, dsn)
 	if err != nil {

@@ -39,6 +39,12 @@
 
 本机证据脚本：`.runtime/phase1-browser-qa.js`、`phase1-browser-password.js`、`phase1-browser-mobile.js`。截图：`output/playwright/users-list-english.png`、`users-list-mobile.png`、`users-detail-mobile-final.png`、`first-password-mobile.png`。首次改密的 6 项前端测试包含在 235 项总数内，不重复累计。
 
+## 远端 CI 复核与修正
+
+首次推送 `33b6734` 的 [远端检查](https://github.com/RainGoal/wsapi-video/actions/runs/40526113569) 中，前端通过；后端仅 `cmd/monitor` 的独立数据库测试失败，镜像任务随依赖跳过。原因是取消邮件过滤增加了 `cancelled_at`，独立测试手建表和监控列级授权说明未同步。此前全量后端通过的记录发生在该过滤补改前，补改后只运行 operations 定向检查，遗漏了依赖同一查询的 monitor 测试。
+
+已同步测试表结构及列级授权，加入取消邮件不计入待发/重试的断言，并更新监控升级说明。隔离 PostgreSQL 下 `go test -race ./cmd/monitor ./internal/operations -count=1 -timeout=180s` 通过（6.513 / 9.813 秒），相关包 vet、monitor 构建、文档格式和差异检查通过。完整远端流水线结果以修正提交对应运行记录为准。
+
 ## 升级与验收边界
 
 部署新版程序时自动执行 `backend/migrations/009_user_management.sql`，新增用户字段、审计前后值及邮件生命周期字段；旧用户默认无需首次改密，已应用的旧迁移未修改。操作说明见 [运行手册](OPERATIONS.md)。

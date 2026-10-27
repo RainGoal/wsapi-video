@@ -17,8 +17,8 @@
 | `task_archive_failed`         | 仍冻结且生成完成，并处于归档重试/错误或 archive_review                                                                  |
 | `task_lease_expired`          | 仍冻结且非空 Worker 租约已过期，不等于已证明 Worker 永久停止                                                            |
 | `payment_review`              | 未到账且已付款、订单过期或查单次数至少 3 次，不等于付款失败                                                             |
-| `mail_pending`                | 所有尚未发送的 outbox 记录，包含正常排队邮件                                                                            |
-| `mail_retry`                  | 尚未发送且 attempts 大于零的邮件，是 mail_pending 的子集                                                                |
+| `mail_pending`                | 尚未发送且未取消的 outbox 记录，包含正常排队邮件                                                                        |
+| `mail_retry`                  | 尚未发送、未取消且 attempts 大于零的邮件，是 mail_pending 的子集                                                        |
 | `procurement_review_disputed` | 每个任务 revision 最大的采购人工核对记录仍为 disputed；与冻结、执行、交付和旧采购异常处置状态无关，已消费任务同样可计入 |
 
 快照的计数、最早时间和样本来自一条 SQL 的同一时间点。`oldest_at`/样本 `occurred_at` 对过期租约使用 lease_until，人工采购差异使用当前核对记录的 created_at，其他使用对象 created_at；它们不是故障首次发生时间。采购差异的样本 ID 为本地任务 ID，attempts 固定为 0，不读取原因、依据或操作者。后续最新记录改为 pending、matched 或 resolved，该任务即退出此信号；历史 disputed 不继续计数。邮件只输出本地 outbox ID、时间与重试次数，不输出邮箱、主题、正文或验证/重置 ticket。快照也不含租约 token、密钥、签名链接或供应商错误响应。
@@ -38,7 +38,7 @@ GRANT SELECT (id, created_at, attempts, lease_until, execution_status,
   ON public.generation_tasks TO frame_monitor;
 GRANT SELECT (id, created_at, check_attempts, credit_status, payment_status, expires_at)
   ON public.payment_orders TO frame_monitor;
-GRANT SELECT (id, created_at, attempts, sent_at)
+GRANT SELECT (id, created_at, attempts, sent_at, cancelled_at)
   ON public.auth_mail_outbox TO frame_monitor;
 GRANT SELECT (task_id, revision, status, created_at)
   ON public.task_procurement_reviews TO frame_monitor;
@@ -46,7 +46,7 @@ ALTER ROLE frame_monitor SET default_transaction_read_only = on;
 ALTER ROLE frame_monitor IN DATABASE studio SET search_path = public;
 ```
 
-查询表名没有限定 schema；最后一行的 `public` 必须与上述四表实际所在 schema 一致，也可在专用 MONITOR_DATABASE_URL 中显式设置同一个 search_path。仅替换 GRANT 的 schema 而不配置连接搜索路径，会导致找不到表。不要在监控 DSN 中覆盖成其他搜索路径。先由应用正常执行包括 005 在内的迁移，再部署新版 monitor；已部署的监控角色只追加上面的四列授权，不授予核对原因、依据、操作者或表级 SELECT。表或列授权缺失会使读取失败，不能解释为无采购差异。
+查询表名没有限定 schema；最后一行的 `public` 必须与上述四表实际所在 schema 一致，也可在专用 MONITOR_DATABASE_URL 中显式设置同一个 search_path。仅替换 GRANT 的 schema 而不配置连接搜索路径，会导致找不到表。不要在监控 DSN 中覆盖成其他搜索路径。先由应用正常执行包括 005、009 在内的迁移，再部署新版 monitor；已部署的监控角色补齐上述核对表四列及邮件 `cancelled_at` 的列级 SELECT，不授予核对原因、依据、操作者或表级 SELECT。表或列授权缺失会使读取失败，不能解释为无采购差异或无待发邮件。
 
 在可信交互式 psql 中用 `\password frame_monitor` 设置独立密码，经秘密管理器提供连接字符串；不要在聊天、命令日志或仓库里写实际密码。不授予其他角色成员资格、全表 SELECT、写权限或数据库管理员权限；迁移新增表不会自动扩大该角色授权。结合数据库既有 TLS、网络访问及认证策略，仅允许监控主机连接。外置 PostgreSQL 不得沿用同主机容器模板的关闭 TLS 设置。
 
